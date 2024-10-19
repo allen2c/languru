@@ -1,13 +1,32 @@
+import base64
 import hashlib
 import json
-from typing import Any, Dict, List, Literal, Sequence, Text, Union
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Dict,
+    List,
+    Literal,
+    Optional,
+    Sequence,
+    Text,
+    Union,
+)
 from xml.sax.saxutils import escape as xml_escape
 
+import numpy as np
+from numpy.typing import DTypeLike
+from openai import OpenAI
 from openai.types.chat import ChatCompletionMessageParam
 from openai.types.chat.chat_completion import ChatCompletion
 from pyassorted.string.rand import rand_str
 
+from languru.config import logger
 from languru.types.chat.completions import Message
+
+if TYPE_CHECKING:
+    from diskcache import Cache
 
 
 def rand_openai_id(
@@ -169,3 +188,115 @@ def messages_to_xml(
             child.text = f"\n{xml_escape(str(_content)).strip()}\n"
 
     return pretty_xml(root, indent=indent)
+
+
+def emb_to_base64(emb: List[float], dtype: DTypeLike = np.float32) -> Text:
+    return base64.b64encode(np.array(emb, dtype=dtype).tobytes()).decode("utf-8")
+
+
+def emb_from_base64(base64_str: Text, dtype: DTypeLike = np.float32) -> List[float]:
+    return np.frombuffer(  # type: ignore[no-untyped-call]
+        base64.b64decode(base64_str), dtype=dtype
+    ).tolist()
+
+
+def embeddings_create_with_cache(
+    *,
+    input: Text | Sequence[Text],
+    model: Text,
+    dimensions: int,
+    openai_client: "OpenAI",
+    cache: Optional["Cache"],
+) -> List[List[float]]:
+    if not input:
+        return []
+
+    _input = [input] if isinstance(input, Text) else list(input)
+    _output: List[Optional[List[float]]] = [None] * len(_input)
+
+    # Check cache existence
+    _cached_idx: List[int] = []
+    _uncached_idx: List[int] = []
+    if cache is not None:
+        for i, _inp in enumerate(_input):
+            _cached_emb_base64: Optional[Text] = cache.get(_inp)  # type: ignore
+            if _cached_emb_base64 is not None:
+                logger.debug(f"Embedding cache hit for '{_inp[:24]}...'")
+                _output[i] = emb_from_base64(_cached_emb_base64)
+                _cached_idx.append(i)
+            else:
+                _uncached_idx.append(i)
+    else:
+        _uncached_idx = list(range(len(_input)))
+
+    # Get embeddings from OpenAI
+    if _uncached_idx:
+        _emb_res = openai_client.embeddings.create(
+            input=[_input[i] for i in _uncached_idx],
+            model=model,
+            dimensions=dimensions,
+        )
+        for i, emb in zip(_uncached_idx, _emb_res.data):
+            if cache is not None:
+                logger.debug(f"Caching embedding for '{_input[i][:24]}...'")
+                cache.set(_input[i], emb_to_base64(emb.embedding))
+            _output[i] = emb.embedding
+
+    # Check if any embeddings failed to be retrieved
+    if any(e is None for e in _output):
+        raise ValueError("Failed to get embeddings from the OpenAI API.")
+    return _output  # type: ignore
+
+
+def ensure_vector(
+    query: Text | List[float],
+    *,
+    openai_client: Optional["OpenAI"] = None,
+    cache: Optional["Cache"],
+    input_func: Callable[[Text], List[Text]] = lambda x: [x.strip()],
+    embedding_model: Optional[Text] = None,
+    embedding_dimensions: Optional[int] = None,
+) -> List[float]:
+    if isinstance(query, Text):
+        query = query.strip()
+
+    if not query:
+        raise ValueError("Query cannot be empty.")
+
+    if isinstance(query, Text):
+        if not openai_client:
+            raise ValueError(
+                "Argument `openai_client` is required to create embeddings."
+            )
+        if not embedding_model:
+            raise ValueError(
+                "Argument `embedding_model` is required to create embeddings."
+            )
+        if not embedding_dimensions:
+            raise ValueError(
+                "Argument `embedding_dimensions` is required to create embeddings."
+            )
+        _inputs = input_func(query)
+        _vectors = embeddings_create_with_cache(
+            input=_inputs,
+            model=embedding_model,
+            dimensions=embedding_dimensions,
+            openai_client=openai_client,
+            cache=cache,
+        )
+        if len(_vectors) != len(_inputs):
+            raise ValueError(
+                f"Expected {len(_inputs)} vectors, but got {len(_vectors)} vectors."
+            )
+        _vector = _vectors[0]
+
+    else:
+        _vector = query
+
+    if embedding_dimensions is not None:
+        if len(_vector) != embedding_dimensions:
+            raise ValueError(
+                f"Expected vector of length {embedding_dimensions}, "
+                + f"but got {len(_vector)}."
+            )
+    return _vector

@@ -43,11 +43,8 @@
     }
   },
   "vscode-yaml-sort.quotingType": "\"",
-  "evenBetterToml.formatter.columnWidth": 1000,
   "evenBetterToml.formatter.reorderKeys": true,
   "evenBetterToml.formatter.reorderArrays": true,
-  "evenBetterToml.formatter.arrayAutoCollapse": true,
-  "evenBetterToml.formatter.arrayAutoExpand": false,
   "flake8.args": [
     "--ignore=E203,E704,W503",
     "--max-line-length=88",

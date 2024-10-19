@@ -46,6 +46,7 @@ async def browser_context():
                 "--start-maximized",
                 "--disable-features=DownloadBubble",
                 "--mute-audio",
+                "--autoplay-policy=user-gesture-required",
             ],
         )
         context = await browser.new_context(
@@ -57,6 +58,17 @@ async def browser_context():
             color_scheme="no-preference",
             accept_downloads=False,
         )
+
+        # Add this block to disable autoplay
+        await context.add_init_script(
+            """
+            Object.defineProperty(HTMLMediaElement.prototype, 'autoplay', {
+                set: () => {},
+                get: () => false
+            });
+            """
+        )
+
         yield context
         await try_await_or_none(context.close)
         await try_await_or_none(browser.close)

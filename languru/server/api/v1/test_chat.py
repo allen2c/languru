@@ -43,7 +43,7 @@ def mocked_openai_chat_completion_create_stream():
 
 def test_app_chat(test_client, mocked_openai_chat_completion_create):
     chat_call = {
-        "model": "gpt-3.5-turbo",
+        "model": "gpt-4o-mini",
         "messages": [
             {"role": "system", "content": "Respond simply and concisely."},
             {"role": "user", "content": "Hello!"},
@@ -56,7 +56,7 @@ def test_app_chat(test_client, mocked_openai_chat_completion_create):
 
 def test_app_chat_stream(test_client, mocked_openai_chat_completion_create_stream):
     chat_call = {
-        "model": "gpt-3.5-turbo",
+        "model": "gpt-4o-mini",
         "messages": [
             {"role": "system", "content": "You are a helpful assistant."},
             {"role": "user", "content": "Hello!"},

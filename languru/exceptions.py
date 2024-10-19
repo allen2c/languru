@@ -16,3 +16,7 @@ class CredentialsNotProvided(Exception):
 
 class CaptchaDetected(Exception):
     pass
+
+
+class NotSupported(Exception):
+    pass

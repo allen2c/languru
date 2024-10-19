@@ -21,7 +21,7 @@ class DataModel(BaseModel):
         cls: Type[DataModelTypeVar],
         content: Text,
         client: "OpenAI",
-        model: Text = "gpt-3.5-turbo",
+        model: Text = "gpt-4o-mini",
         *,
         verbose: bool = False,
         **kwargs,

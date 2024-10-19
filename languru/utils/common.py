@@ -1,5 +1,7 @@
+import itertools
 import json
 import string
+from pathlib import Path
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -15,6 +17,7 @@ from typing import (
     Sequence,
     Text,
     Tuple,
+    Type,
     TypeVar,
     Union,
     cast,
@@ -23,6 +26,7 @@ from typing import (
 
 from openai.types.beta.threads.message import Message as ThreadsMessage
 from pydantic import BaseModel
+from pydantic_core import ValidationError
 from rich import box
 from rich import print as rich_print
 from rich.style import Style, StyleType
@@ -316,3 +320,89 @@ def choice_first(items: T | Sequence[T]) -> T | None:
         return items[0]
     else:
         return items
+
+
+def is_validate_filename(value: Text) -> bool:
+    r"""Validate a filename against common restrictions.
+
+    This function checks if the provided filename is valid based on the following criteria:
+    - It should not be empty.
+    - It should not contain any invalid characters (e.g., <, >, :, ", /, \, |, ?, *).
+    - It should not be a reserved name in Windows (e.g., CON, PRN, AUX, NUL, COM1, LPT1, etc.).
+    - It should not exceed the common maximum filename length of 255 characters.
+
+    Args:
+        value (Text): The filename to validate.
+
+    Raises:
+        ValidationError: If the filename is invalid based on the criteria above.
+
+    Returns:
+        bool: True if the filename is valid, otherwise raises an exception.
+    """  # noqa: E501
+
+    invalid_windows_chars = r'<>:"/\\|?*'
+    invalid_unix_chars = r"/"
+    invalid_chars = set(invalid_windows_chars + invalid_unix_chars)
+
+    # Windows reserved filenames
+    reserved_names = {
+        "CON",
+        "PRN",
+        "AUX",
+        "NUL",
+        *(f"COM{i}" for i in range(1, 10)),
+        *(f"LPT{i}" for i in range(1, 10)),
+    }
+
+    # Check for empty filename
+    if not value:
+        raise ValidationError("Filename cannot be empty.")
+
+    # Check for invalid characters
+    if any(char in invalid_chars for char in value):
+        raise ValidationError(f"Filename contains invalid characters: {invalid_chars}")
+
+    # Check for reserved names (case-insensitive)
+    if value.upper().split(".")[0] in reserved_names:
+        raise ValidationError("Filename is a reserved name in Windows.")
+
+    # Check for length limits (common max filename length is 255 characters)
+    if len(value) > 255:
+        raise ValidationError(
+            "Filename is too long; it must be 255 characters or fewer."
+        )
+
+    return True
+
+
+def read_jsonl(path: Text, cast: Type[T]) -> List[T]:
+    _path = Path(path)
+    _path.touch(exist_ok=True)
+
+    records = []
+    with open(_path, "r") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                records.append(cast(**json.loads(line)))
+    return records
+
+
+def append_jsonl(data: Dict, *, path: Text):
+    _path = Path(path)
+    _path.touch(exist_ok=True)
+    with open(_path, "a") as f:
+        f.write(json.dumps(data) + "\n")
+
+
+def chunks(
+    items: Iterable[T], batch_size: int = 100
+) -> Generator[Tuple[T, ...], None, None]:
+    """A helper function to break an iterable into chunks of size batch_size."""
+
+    it = iter(items)
+    chunk = tuple(itertools.islice(it, batch_size))
+    while chunk:
+        yield chunk
+        chunk = tuple(itertools.islice(it, batch_size))

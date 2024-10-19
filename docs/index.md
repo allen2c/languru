@@ -59,7 +59,7 @@ from openai import OpenAI
 
 client = OpenAI(base_url="http://localhost:8682/v1")
 res = client.chat.completions.create(
-    model="gpt-3.5-turbo",
+    model="gpt-4o-mini",
     messages=[
         {"role": "system", "content": "You are a helpful assistant."},
         {"role": "user", "content": "Hello!"},
@@ -75,7 +75,7 @@ Chat streaming:
 ```python
 client = OpenAI(base_url="http://localhost:8682/v1")
 res = client.chat.completions.create(
-    model="gpt-3.5-turbo",
+    model="gpt-4o-mini",
     messages=[
         {"role": "system", "content": "You are a helpful assistant."},
         {"role": "user", "content": "Hello!"},

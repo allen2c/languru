@@ -44,7 +44,7 @@ This endpoint handles chat completion requests. It accepts a `ChatCompletionRequ
 curl -X POST \
     http://localhost:8000/chat/completions \
     -H 'Content-Type: application/json' \
-    -d '{"model": "gpt-3.5-turbo", "prompt": "Hello, how are you?", "max_tokens": 100, "temperature": 0.7, "stream": false}'
+    -d '{"model": "gpt-4o-mini", "prompt": "Hello, how are you?", "max_tokens": 100, "temperature": 0.7, "stream": false}'
 ```
 
 ### Streaming Chat Completion Request
@@ -53,7 +53,7 @@ curl -X POST \
 curl -X POST \
     http://localhost:8000/chat/completions \
     -H 'Content-Type: application/json' \
-    -d '{"model": "gpt-3.5-turbo", "prompt": "Hello, how are you?", "max_tokens": 100, "temperature": 0.7, "stream": true}'
+    -d '{"model": "gpt-4o-mini", "prompt": "Hello, how are you?", "max_tokens": 100, "temperature": 0.7, "stream": true}'
 ```
 
 ## Control Flow

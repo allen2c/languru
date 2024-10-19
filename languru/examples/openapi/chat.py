@@ -2,7 +2,7 @@ chat_openai_basic = {
     "summary": "OpenAI",
     "description": "Chat completion request",
     "value": {
-        "model": "gpt-3.5-turbo",
+        "model": "gpt-4o-mini",
         "messages": [
             {"role": "system", "content": "You are a helpful assistant."},
             {"role": "user", "content": "Hello!"},
@@ -13,7 +13,7 @@ chat_openai_stream = {
     "summary": "OpenAI Stream",
     "description": "Chat completion stream request",
     "value": {
-        "model": "gpt-3.5-turbo",
+        "model": "gpt-4o-mini",
         "messages": [
             {"role": "system", "content": "Respond accurately and concisely."},
             {"role": "user", "content": "Why is the sky blue?"},
