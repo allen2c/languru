@@ -1,6 +1,7 @@
 import itertools
 import json
 import string
+from datetime import datetime
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
@@ -24,6 +25,7 @@ from typing import (
     overload,
 )
 
+import pytz
 from openai.types.beta.threads.message import Message as ThreadsMessage
 from pydantic import BaseModel
 from pydantic_core import ValidationError
@@ -406,3 +408,9 @@ def chunks(
     while chunk:
         yield chunk
         chunk = tuple(itertools.islice(it, batch_size))
+
+
+def display_datetime_now(tz: pytz.BaseTzInfo = pytz.timezone("Asia/Taipei")) -> Text:
+
+    now = datetime.now(tz)
+    return now.strftime("%A, %B %d, %Y %I:%M %p (%Z, UTC%z)")
