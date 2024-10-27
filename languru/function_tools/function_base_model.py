@@ -1,4 +1,4 @@
-from typing import Callable, ClassVar, Final, List, Sequence, Text, Type
+from typing import Any, Callable, ClassVar, Final, List, Sequence, Text, Type
 
 from openai.types.beta.function_tool import FunctionTool
 from openai.types.shared.function_definition import FunctionDefinition
@@ -34,7 +34,14 @@ def func_def_from_base_model(
     )
 
 
-def func_tool_from_base_model(base_model_type: Type[BaseModel]) -> "FunctionTool":
+def func_tool_from_base_model(
+    base_model_type: (
+        Type["FunctionToolRequestBaseModel"]
+        | "FunctionToolRequestBaseModel"
+        | Type[BaseModel]
+        | BaseModel
+    ),
+) -> "FunctionTool":
     return FunctionTool.model_validate(
         {
             "function": func_def_from_base_model(base_model_type),
@@ -44,7 +51,12 @@ def func_tool_from_base_model(base_model_type: Type[BaseModel]) -> "FunctionTool
 
 
 def func_tools_from_base_models(
-    base_model_types: Sequence[Type[BaseModel]],
+    base_model_types: Sequence[
+        Type["FunctionToolRequestBaseModel"]
+        | "FunctionToolRequestBaseModel"
+        | Type[BaseModel]
+        | BaseModel
+    ],
 ) -> List["FunctionTool"]:
     return [
         func_tool_from_base_model(base_model_type)
@@ -56,3 +68,10 @@ class FunctionToolRequestBaseModel(BaseModel):
     FUNCTION_NAME: ClassVar[Text]
     FUNCTION_DESCRIPTION: ClassVar[Text]
     FUNCTION: ClassVar[Callable]
+
+    @classmethod
+    def to_function_tool(cls) -> FunctionTool:
+        return func_tool_from_base_model(cls)
+
+    def parse_response_as_tool_content(self, response: Any) -> Text:
+        raise NotImplementedError
