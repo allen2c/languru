@@ -25,6 +25,7 @@ google-cloud-aiplatform = "^1.38"
 google-generativeai = "<1,>=0.3.2,!=0.7.1"
 googlesearch-python = { version = "*", optional = true }
 groq = "<1,>=0.4.2"
+json-repair = "*"
 openai = "^1.10.0"
 packaging = ">=23"
 pandas = ">2"
