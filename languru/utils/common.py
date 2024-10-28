@@ -171,7 +171,8 @@ def display_messages(
     # Read messages
     for m in _messages:
         role = str(m.get("role") or "Unknown").capitalize()
-        content = m.get("content") or "n/a"
+        content = str(m.get("content") or "n/a")
+        tool_calls: List[Dict] = m.get("tool_calls") or []  # type: ignore
         if isinstance(content, List):  # OpenAI Threads messages
             _content = ""
             for content_block in content:
@@ -191,6 +192,12 @@ def display_messages(
                 else:
                     _content += str(content_block)
             content = _content
+        elif tool_calls:
+            for tool_call in tool_calls:
+                tool_call_id = tool_call.get("id") or "n/a"
+                func_name = get_safe_value(tool_call, "function", "name")
+                func_args_str = get_safe_value(tool_call, "function", "arguments")
+                content += f"\n\nToolCall:{tool_call_id}:{func_name}({func_args_str})"
         else:
             content = str(content)
 

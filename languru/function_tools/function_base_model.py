@@ -1,6 +1,8 @@
+import json
 from textwrap import dedent
 from typing import Any, Callable, ClassVar, Final, Text
 
+from json_repair import repair_json
 from openai.types.beta.function_tool import FunctionTool
 from pydantic import BaseModel, Field
 
@@ -31,3 +33,10 @@ class FunctionToolRequestBaseModel(BaseModel):
     @classmethod
     def parse_response_as_tool_content(cls, response: Any) -> Text:
         raise NotImplementedError
+
+    @classmethod
+    def from_args_str(cls, args_str: Text):
+        func_kwargs = (
+            json.loads(repair_json(args_str)) if args_str else {}  # type: ignore
+        )
+        return cls.model_validate(func_kwargs)

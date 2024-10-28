@@ -1,10 +1,13 @@
+import json
 import os
 from datetime import datetime
 from textwrap import dedent
 from typing import Any, Callable, ClassVar, Dict, Literal, Text, cast
 
 import requests
-from pydantic import Field
+from json_repair import repair_json
+from pydantic import Field, field_validator
+from pydantic_core import ValidationError
 
 from languru.config import logger
 from languru.function_tools.function_base_model import FunctionToolRequestBaseModel
@@ -175,6 +178,13 @@ class GetWeatherForecastDaily(FunctionToolRequestBaseModel):
         ).strip(),
     )
 
+    @field_validator("query")
+    def validate_query(cls, v: Text) -> Text:
+        v = v.strip()
+        if not v:
+            raise ValidationError("Parameter `query` cannot be empty")
+        return v
+
     @classmethod
     def parse_response_as_tool_content(cls, response: Dict[Text, Any]) -> Text:
         if not response and not isinstance(response, Dict):
@@ -184,3 +194,27 @@ class GetWeatherForecastDaily(FunctionToolRequestBaseModel):
         except Exception as e:
             logger.exception(e)
             return cls.FUNCTION_ERROR_CONTENT
+
+    @classmethod
+    def from_args_str(cls, args_str: Text):
+        func_kwargs = (
+            json.loads(repair_json(args_str)) if args_str else {}  # type: ignore
+        )
+        if "duration" in func_kwargs:
+            try:
+                duration = int(func_kwargs["duration"])
+            except ValidationError as e:
+                logger.error(f"Invalid duration: {func_kwargs['duration']}")
+                raise e
+            if duration < 1:
+                duration = 1
+            elif duration > 10:
+                duration = 10
+            elif duration > 5:
+                duration = 10
+            elif duration > 1:
+                duration = 5
+            else:
+                duration = 1
+            func_kwargs["duration"] = duration
+        return cls.model_validate(func_kwargs)

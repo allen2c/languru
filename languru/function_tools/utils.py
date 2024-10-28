@@ -24,7 +24,8 @@ def func_def_from_base_model(
     func_name = getattr(base_model_type, FIELD_FUNCTION_NAME, None)
     if not func_name:
         raise ValueError(
-            "The class variable `function_name` is not set for the base model"
+            "The class variable `function_name` is not set for the base model: "
+            + f"{base_model_type}"
         )
     func_description = getattr(base_model_type, FIELD_FUNCTION_DESCRIPTION, None)
     model_json_schema = base_model_type.model_json_schema()
