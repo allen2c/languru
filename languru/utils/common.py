@@ -159,6 +159,7 @@ def display_messages(
     _messages = [
         m.model_dump() if isinstance(m, BaseModel) else dict(m) for m in messages
     ]
+    _messages.sort(key=lambda x: x.get("created_at"))  # type: ignore
 
     # Initialize output
     out = ""
@@ -166,12 +167,12 @@ def display_messages(
     if is_print:
         table = Table(title=table_title, width=table_width)
         table.add_column("Role", justify="right", style="bold cyan")
-        table.add_column("Content", justify="left")
+        table.add_column("Content", justify="left", no_wrap=True)
 
     # Read messages
     for m in _messages:
         role = str(m.get("role") or "Unknown").capitalize()
-        content = str(m.get("content") or "n/a")
+        content: Text | List[Dict] = m.get("content") or "n/a"  # type: ignore
         tool_calls: List[Dict] = m.get("tool_calls") or []  # type: ignore
         if isinstance(content, List):  # OpenAI Threads messages
             _content = ""

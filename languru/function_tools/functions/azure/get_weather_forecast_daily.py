@@ -208,9 +208,7 @@ class GetWeatherForecastDaily(FunctionToolRequestBaseModel):
                 raise e
             if duration < 1:
                 duration = 1
-            elif duration > 10:
-                duration = 10
-            elif duration > 5:
+            elif duration >= 5:
                 duration = 10
             elif duration > 1:
                 duration = 5
