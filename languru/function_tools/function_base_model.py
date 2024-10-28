@@ -4,6 +4,7 @@ from typing import Any, Callable, ClassVar, Final, Text
 
 from json_repair import repair_json
 from openai.types.beta.function_tool import FunctionTool
+from openai.types.beta.threads import run_submit_tool_outputs_params
 from openai.types.chat.chat_completion_tool_message_param import (
     ChatCompletionToolMessageParam,
 )
@@ -41,11 +42,20 @@ class FunctionToolRequestBaseModel(BaseModel):
     def parse_response_as_openai_tool_message_param(
         cls, response: Any, *, tool_call_id: Text
     ) -> ChatCompletionToolMessageParam:
-        return {
-            "content": cls.parse_response_as_tool_content(response),
-            "role": "tool",
-            "tool_call_id": tool_call_id,
-        }
+        return ChatCompletionToolMessageParam(
+            content=cls.parse_response_as_tool_content(response),
+            role="tool",
+            tool_call_id=tool_call_id,
+        )
+
+    @classmethod
+    def parse_response_as_assistant_tool_output(
+        cls, response: Any, *, tool_call_id: Text
+    ) -> "run_submit_tool_outputs_params.ToolOutput":
+        return run_submit_tool_outputs_params.ToolOutput(
+            output=cls.parse_response_as_tool_content(response),
+            tool_call_id=tool_call_id,
+        )
 
     @classmethod
     def from_args_str(cls, args_str: Text):
