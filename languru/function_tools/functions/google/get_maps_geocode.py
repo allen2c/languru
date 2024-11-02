@@ -14,7 +14,7 @@ gmaps = googlemaps.Client(key=os.environ["GEOCODING_API_KEY"])
 
 
 # Get coordinates for a place
-def get_maps_geocode(request: "GeocodeRequest") -> Optional[Dict[Text, Any]]:
+def get_maps_geocode(request: "GetMapsGeocode") -> Optional[Dict[Text, Any]]:
     try:
         # Geocoding request
         results = gmaps.geocode(  # type: ignore
@@ -71,7 +71,7 @@ def format_maps_geocode_article(geocode_data: Optional[Dict[Text, Any]]) -> Text
     return "\n".join([f"<place>{p}</place>" for p in article_parts if p])
 
 
-class GeocodeRequest(FunctionToolRequestBaseModel):
+class GetMapsGeocode(FunctionToolRequestBaseModel):
     FUNCTION_NAME: ClassVar[Text] = "get_maps_geocode"
     FUNCTION_DESCRIPTION: ClassVar[Text] = dedent(
         """
@@ -80,7 +80,7 @@ class GeocodeRequest(FunctionToolRequestBaseModel):
         The function returns detailed weather information including temperature, humidity, wind, precipitation, and UV index for the specified duration.
         """  # noqa: E501
     ).strip()
-    FUNCTION: ClassVar[Callable[["GeocodeRequest"], Optional[Dict]]] = get_maps_geocode
+    FUNCTION: ClassVar[Callable[["GetMapsGeocode"], Optional[Dict]]] = get_maps_geocode
 
     address: Optional[Text] = Field(..., description="The address to geocode.")
     region: Optional[Text] = Field(
