@@ -4,6 +4,7 @@ from typing import Any, Callable, ClassVar, Final, Text
 
 from json_repair import repair_json
 from openai.types.beta.function_tool import FunctionTool
+from openai.types.beta.function_tool_param import FunctionToolParam
 from openai.types.beta.threads import run_submit_tool_outputs_params
 from openai.types.chat.chat_completion_tool_message_param import (
     ChatCompletionToolMessageParam,
@@ -29,10 +30,14 @@ class FunctionToolRequestBaseModel(BaseModel):
     )
 
     @classmethod
-    def to_function_tool(cls) -> FunctionTool:
+    def to_function_tool(cls) -> "FunctionTool":
         from languru.function_tools.utils import func_tool_from_base_model
 
         return func_tool_from_base_model(cls)
+
+    @classmethod
+    def to_function_tool_param(cls) -> "FunctionToolParam":
+        return cls.to_function_tool().model_dump(exclude_none=True)  # type: ignore
 
     @classmethod
     def parse_response_as_tool_content(cls, response: Any) -> Text:
