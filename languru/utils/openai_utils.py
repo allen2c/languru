@@ -6,6 +6,7 @@ from typing import (
     Any,
     Callable,
     Dict,
+    Iterable,
     List,
     Literal,
     Optional,
@@ -17,7 +18,10 @@ from xml.sax.saxutils import escape as xml_escape
 
 import numpy as np
 from numpy.typing import DTypeLike
-from openai import OpenAI
+from openai import NotFoundError, OpenAI
+from openai.types.beta.assistant import Assistant
+from openai.types.beta.function_tool import FunctionTool
+from openai.types.beta.function_tool_param import FunctionToolParam
 from openai.types.chat import ChatCompletionMessageParam
 from openai.types.chat.chat_completion import ChatCompletion
 from pyassorted.string.rand import rand_str
@@ -300,3 +304,77 @@ def ensure_vector(
                 + f"but got {len(_vector)}."
             )
     return _vector
+
+
+def get_assistant_by_name(
+    name: Text,
+    *,
+    openai_client: "OpenAI",
+) -> Optional["Assistant"]:
+    after: Optional[Text] = None
+    has_more: bool = True
+    while has_more:
+        _params: Dict = {k: v for k, v in {"after": after}.items() if v is not None}
+        assistants_page = openai_client.beta.assistants.list(**_params)
+        for assistant in assistants_page.data:
+            if assistant.name == name:
+                return assistant
+        after = assistants_page.data[-1].id
+        has_more = assistants_page.has_more  # type: ignore
+    return None
+
+
+def ensure_assistant(
+    id_or_name: Text,
+    *,
+    openai_client: "OpenAI",
+    assistant_name: Optional[Text] = None,
+    assistant_instructions: Optional[Text] = None,
+    assistant_model: Text = "gpt-4o-mini",
+    assistant_temperature: float = 0.3,
+    assistant_tools: Optional[Iterable["FunctionTool"]] = None,
+) -> "Assistant":
+    assistant: Optional["Assistant"] = None
+    tools: List[FunctionToolParam] = [
+        t.model_dump() for t in assistant_tools or []  # type: ignore
+    ]
+    # Retrieve an existing assistant by ID
+    if id_or_name.startswith("asst_"):
+        try:
+            assistant = openai_client.beta.assistants.retrieve(id_or_name)
+        except NotFoundError:
+            # Try to find an assistant by name
+            pass
+
+    # Try to find an assistant by name
+    if assistant is None:
+        assistant = get_assistant_by_name(id_or_name, openai_client=openai_client)
+
+    # Create a new assistant
+    if assistant is None:
+        if assistant_name is None or assistant_instructions is None:
+            raise ValueError(
+                "Try to create a new assistant, but argument `assistant_name` and "
+                + "`assistant_instructions` are not provided."
+            )
+
+        logger.info(f"Creating assistant: {assistant_name}")
+        assistant = openai_client.beta.assistants.create(
+            name=assistant_name,
+            instructions=assistant_instructions,
+            model=assistant_model,
+            temperature=assistant_temperature,
+            tools=tools,
+        )
+
+    # Update an existing assistant
+    else:
+        logger.info(f"Updating assistant: {assistant_name}")
+        assistant = openai_client.beta.assistants.update(
+            assistant_id=assistant.id,
+            instructions=assistant_instructions,
+            temperature=assistant_temperature,
+            tools=tools,
+        )
+
+    return assistant
