@@ -68,16 +68,19 @@ def format_maps_geocode_article(geocode_data: Optional[Dict[Text, Any]]) -> Text
             f"This location is categorized as: {types}."
         )
 
-    return "\n".join([f"<place>{p}</place>" for p in article_parts if p])
+    return (
+        "<places>\n"
+        + "\n".join([f"<place>{p}</place>" for p in article_parts if p]).strip()
+        + "\n</places>"
+    )
 
 
 class GetMapsGeocode(FunctionToolRequestBaseModel):
     FUNCTION_NAME: ClassVar[Text] = "get_maps_geocode"
     FUNCTION_DESCRIPTION: ClassVar[Text] = dedent(
         """
-        This function retrieves an hourly weather forecast from the Azure Maps Weather API.
-        It accepts parameters such as location query, duration, and language to customize the forecast data.
-        The function returns detailed weather information including temperature, humidity, wind, precipitation, and UV index for the specified duration.
+        This function retrieves geocoding information for a given address using the Google Maps Geocoding API.
+        It returns the geographical coordinates and other relevant details about the location.
         """  # noqa: E501
     ).strip()
     FUNCTION: ClassVar[Callable[["GetMapsGeocode"], Optional[Dict]]] = get_maps_geocode
