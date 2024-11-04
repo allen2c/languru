@@ -9,7 +9,7 @@ from openai.types.beta.threads import run_submit_tool_outputs_params
 from openai.types.chat.chat_completion_tool_message_param import (
     ChatCompletionToolMessageParam,
 )
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 FIELD_FUNCTION_NAME: Final[Text] = "FUNCTION_NAME"
 FIELD_FUNCTION_DESCRIPTION: Final[Text] = "FUNCTION_DESCRIPTION"
@@ -21,13 +21,11 @@ class FunctionToolRequestBaseModel(BaseModel):
     FUNCTION_NAME: ClassVar[Text]
     FUNCTION_DESCRIPTION: ClassVar[Text]
     FUNCTION: ClassVar[Callable]
-    FUNCTION_ERROR_CONTENT: ClassVar[Text] = Field(
-        default=dedent(
-            """
-            The service is currently unavailable. Please try again later.
-            """
-        ).strip(),
-    )
+    FUNCTION_ERROR_CONTENT: ClassVar[Text] = dedent(
+        """
+        The service is currently unavailable. Please try again later.
+        """
+    ).strip()
 
     @classmethod
     def to_function_tool(cls) -> "FunctionTool":

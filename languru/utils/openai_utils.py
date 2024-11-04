@@ -43,6 +43,10 @@ def rand_openai_id(
         "message",
         "msg",
         "run",
+        "call",
+        "tool_call",
+        "toolcall",
+        "tool",
     ]
 ) -> Text:
     if type in ("chat_completion", "chatcmpl"):
@@ -55,6 +59,8 @@ def rand_openai_id(
         return rand_message_id()
     elif type == "run":
         return rand_run_id()
+    elif type in ("call", "tool_call", "toolcall", "tool"):
+        return rand_tool_call_id()
     else:
         raise ValueError(f"Invalid type: {type}")
 
@@ -77,6 +83,10 @@ def rand_message_id() -> Text:
 
 def rand_run_id() -> Text:
     return f"run_{rand_str(24)}"
+
+
+def rand_tool_call_id() -> Text:
+    return f"call_{rand_str(24)}"
 
 
 def ensure_chat_completion_message_params(
