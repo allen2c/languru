@@ -3,6 +3,8 @@ from typing import TYPE_CHECKING, Dict, Iterable, List, Optional, Text, Type, Un
 
 import httpx
 import openai
+from openai.types.beta.function_tool import FunctionTool
+from openai.types.beta.function_tool_param import FunctionToolParam
 from openai.types.beta.threads import run_submit_tool_outputs_params
 from pydantic import BaseModel
 
@@ -29,6 +31,14 @@ class FunctionToolBox:
             t.FUNCTION_NAME: t for t in function_tool_models
         }
         self._debug = debug
+
+    @property
+    def function_tools(self) -> List["FunctionTool"]:
+        return [t.to_function_tool() for t in self._func_tool_models.values()]
+
+    @property
+    def function_tool_params(self) -> List["FunctionToolParam"]:
+        return [t.to_function_tool_param() for t in self._func_tool_models.values()]
 
     def handle_openai_thread_run_tool_calls(
         self, run: "Run", *, openai_client: "openai.OpenAI"
