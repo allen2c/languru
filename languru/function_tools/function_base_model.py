@@ -9,6 +9,7 @@ from openai.types.beta.threads import run_submit_tool_outputs_params
 from openai.types.chat.chat_completion_tool_message_param import (
     ChatCompletionToolMessageParam,
 )
+from openai.types.chat.chat_completion_tool_param import ChatCompletionToolParam
 from pydantic import BaseModel
 
 FIELD_FUNCTION_NAME: Final[Text] = "FUNCTION_NAME"
@@ -26,6 +27,15 @@ class FunctionToolRequestBaseModel(BaseModel):
         The service is currently unavailable. Please try again later.
         """
     ).strip()
+
+    @classmethod
+    def to_chat_completion_tool_param(cls) -> "ChatCompletionToolParam":
+        from languru.function_tools.utils import func_def_from_base_model
+
+        return ChatCompletionToolParam(
+            type="function",
+            function=func_def_from_base_model(cls).model_dump(),  # type: ignore
+        )
 
     @classmethod
     def to_function_tool(cls) -> "FunctionTool":
