@@ -1,5 +1,17 @@
 import json
-from typing import TYPE_CHECKING, Dict, Iterable, List, Optional, Text, Type, Union
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
+from typing import (
+    TYPE_CHECKING,
+    Dict,
+    Iterable,
+    List,
+    Optional,
+    Text,
+    Tuple,
+    Type,
+    Union,
+)
 
 import httpx
 import openai
@@ -40,6 +52,19 @@ class FunctionToolBox:
     def function_tool_params(self) -> List["FunctionToolParam"]:
         return [t.to_function_tool_param() for t in self._func_tool_models.values()]
 
+    def use_tool(
+        self,
+        name: Text,
+        arguments: Union[Text, BaseModel, Dict],
+        tool_call_id: Optional[Text] = None,
+    ) -> "run_submit_tool_outputs_params.ToolOutput":
+        func_tool_output = self.execute_function(
+            name, arguments, tool_call_id=tool_call_id
+        )
+        if self._debug:
+            _debug_print_tool_output(func_tool_output)
+        return func_tool_output
+
     def handle_openai_thread_run_tool_calls(
         self, run: "Run", *, openai_client: "openai.OpenAI"
     ) -> List["run_submit_tool_outputs_params.ToolOutput"]:
@@ -47,38 +72,32 @@ class FunctionToolBox:
         if run.required_action is None:
             return tool_outputs
 
-        # Debug print required tool calls
-        if self._debug:
-            _debug_print_all_tool_calls(run)
-
+        # Prepare function execution parameters
+        execute_func_params: List[Tuple[Text, Text, Optional[Text]]] = []
         for tool in run.required_action.submit_tool_outputs.tool_calls:
-            tool_outputs.append(self.execute_required_action_function_tool_call(tool))
-
-        return tool_outputs
-
-    def execute_required_action_function_tool_call(
-        self, tool: "RequiredActionFunctionToolCall", **kwargs
-    ) -> "run_submit_tool_outputs_params.ToolOutput":
-        if self._debug:
-            _debug_print_tool_call_details(tool)
-
-        try:
-            func_tool_output = self.execute_function(
-                tool.function.name, tool.function.arguments, tool_call_id=tool.id
+            self.raise_if_no_function_tool_model(tool.function.name)
+            execute_func_params.append(
+                (tool.function.name, tool.function.arguments, tool.id)
             )
             if self._debug:
-                _debug_print_tool_output(func_tool_output)
-            return func_tool_output
+                _debug_print_tool_call_details(tool)
 
-        except openai.NotFoundError:
-            logger.error(
-                f"Unknown tool: '{tool.function.name}', "
-                + f"available tools: {list(self._func_tool_models.keys())}"
-            )
-            return run_submit_tool_outputs_params.ToolOutput(
-                tool_call_id=tool.id,
-                output=f"Tool '{tool.function.name}' not available.",
-            )
+        # Execute functions in parallel
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            futures = [
+                executor.submit(
+                    partial(
+                        self.execute_function,
+                        func_name,
+                        func_arguments,
+                        tool_call_id=tool_call_id,
+                    )
+                )
+                for func_name, func_arguments, tool_call_id in execute_func_params
+            ]
+            tool_outputs = [future.result() for future in futures]
+
+        return tool_outputs
 
     def execute_function(
         self,
@@ -88,12 +107,7 @@ class FunctionToolBox:
         tool_call_id: Optional[Text] = None,
         **kwargs,
     ) -> "run_submit_tool_outputs_params.ToolOutput":
-        if func_name not in self._func_tool_models:
-            raise openai.NotFoundError(
-                f"Function tool model with name '{func_name}' not found.",
-                response=httpx.Response(status_code=404),
-                body=None,
-            )
+        self.raise_if_no_function_tool_model(func_name)
 
         call_id = tool_call_id or rand_openai_id("call")
         func_tool_model = self._func_tool_models[func_name]
@@ -128,12 +142,7 @@ class FunctionToolBox:
     def get_function_tool_model(
         self, function_name: Text
     ) -> Type["FunctionToolRequestBaseModel"]:
-        if function_name not in self._func_tool_models:
-            raise openai.NotFoundError(
-                f"Function tool model with name '{function_name}' not found.",
-                response=httpx.Response(status_code=404),
-                body=None,
-            )
+        self.raise_if_no_function_tool_model(function_name)
         return self._func_tool_models[function_name]
 
     def add_function_tool_model(
@@ -144,28 +153,20 @@ class FunctionToolBox:
     def remove_function_tool_model(
         self, function_name: Text, *, raise_if_not_found: bool = False
     ) -> None:
-        if function_name not in self._func_tool_models:
-            if raise_if_not_found:
-                raise openai.NotFoundError(
-                    f"Function tool model with name '{function_name}' not found.",
-                    response=httpx.Response(status_code=404),
-                    body=None,
-                )
+        if raise_if_not_found:
+            self.raise_if_no_function_tool_model(function_name)
         self._func_tool_models.pop(function_name, None)
 
+    def has_function_tool_model(self, function_name: Text) -> bool:
+        return function_name in self._func_tool_models
 
-def _debug_print_all_tool_calls(run: "Run") -> None:
-    if run.required_action is None:
-        return
-
-    _tool_calls_names_parts = []
-    for tool in run.required_action.submit_tool_outputs.tool_calls:
-        _tool_calls_names_parts.append(f"'{tool.function.name}({tool.id})'")
-    _tool_calls_expr = ", ".join(_tool_calls_names_parts)
-    console.print(
-        f"[bold bright_green]Thread({run.thread_id}) Run({run.id}) Tool Calls:[/] "
-        + f"[bright_cyan]{_tool_calls_expr}[/]"
-    )
+    def raise_if_no_function_tool_model(self, function_name: Text) -> None:
+        if self.has_function_tool_model(function_name) is False:
+            raise openai.NotFoundError(
+                f"Function tool model with name '{function_name}' not found.",
+                response=httpx.Response(status_code=404),
+                body=None,
+            )
 
 
 def _debug_print_tool_call_details(tool: "RequiredActionFunctionToolCall") -> None:
