@@ -4,12 +4,12 @@ from typing import Any, Callable, ClassVar, Final, Text
 
 from json_repair import repair_json
 from openai.types.beta.function_tool import FunctionTool
-from openai.types.beta.function_tool_param import FunctionToolParam
 from openai.types.beta.threads import run_submit_tool_outputs_params
 from openai.types.chat.chat_completion_tool_message_param import (
     ChatCompletionToolMessageParam,
 )
 from openai.types.chat.chat_completion_tool_param import ChatCompletionToolParam
+from openai.types.shared.function_definition import FunctionDefinition
 from pydantic import BaseModel
 
 FIELD_FUNCTION_NAME: Final[Text] = "FUNCTION_NAME"
@@ -44,12 +44,12 @@ class FunctionToolRequestBaseModel(BaseModel):
         return func_tool_from_base_model(cls)
 
     @classmethod
-    def to_function_tool_param(cls) -> "FunctionToolParam":
-        return cls.to_function_tool().model_dump(exclude_none=True)  # type: ignore
+    def to_function_definition(cls) -> "FunctionDefinition":
+        return cls.to_function_tool().function
 
     @classmethod
     def parse_response_as_tool_content(cls, response: Any) -> Text:
-        raise NotImplementedError
+        return str(response)
 
     @classmethod
     def parse_response_as_openai_tool_message_param(

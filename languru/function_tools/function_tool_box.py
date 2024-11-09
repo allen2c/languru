@@ -16,8 +16,8 @@ from typing import (
 import httpx
 import openai
 from openai.types.beta.function_tool import FunctionTool
-from openai.types.beta.function_tool_param import FunctionToolParam
 from openai.types.beta.threads import run_submit_tool_outputs_params
+from openai.types.shared.function_definition import FunctionDefinition
 from pydantic import BaseModel
 
 from languru.config import console, logger
@@ -47,10 +47,6 @@ class FunctionToolBox:
     @property
     def function_tools(self) -> List["FunctionTool"]:
         return [t.to_function_tool() for t in self._func_tool_models.values()]
-
-    @property
-    def function_tool_params(self) -> List["FunctionToolParam"]:
-        return [t.to_function_tool_param() for t in self._func_tool_models.values()]
 
     def use_tool(
         self,
@@ -167,6 +163,9 @@ class FunctionToolBox:
                 response=httpx.Response(status_code=404),
                 body=None,
             )
+
+    def to_definitions(self) -> List[FunctionDefinition]:
+        return [t.to_function_definition() for t in self._func_tool_models.values()]
 
 
 def _debug_print_tool_call_details(tool: "RequiredActionFunctionToolCall") -> None:
