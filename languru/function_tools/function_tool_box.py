@@ -37,11 +37,13 @@ class FunctionToolBox:
         self,
         function_tool_models: Iterable[Type["FunctionToolRequestBaseModel"]],
         *,
+        max_workers: int = 5,
         debug: bool = False,
     ):
         self._func_tool_models: Dict[Text, Type["FunctionToolRequestBaseModel"]] = {
             t.FUNCTION_NAME: t for t in function_tool_models
         }
+        self._max_workers = max_workers
         self._debug = debug
 
     @property
@@ -62,11 +64,15 @@ class FunctionToolBox:
         return func_tool_output
 
     def handle_openai_thread_run_tool_calls(
-        self, run: "Run", *, openai_client: "openai.OpenAI"
-    ) -> List["run_submit_tool_outputs_params.ToolOutput"]:
+        self,
+        run: "Run",
+        *,
+        openai_client: "openai.OpenAI",
+        submit_tool_outputs: bool = True,
+    ) -> Tuple[List["run_submit_tool_outputs_params.ToolOutput"], Optional["Run"]]:
         tool_outputs = []
         if run.required_action is None:
-            return tool_outputs
+            return (tool_outputs, None)
 
         # Prepare function execution parameters
         execute_func_params: List[Tuple[Text, Text, Optional[Text]]] = []
@@ -75,15 +81,13 @@ class FunctionToolBox:
             execute_func_params.append(
                 (tool.function.name, tool.function.arguments, tool.id)
             )
-            if self._debug:
-                _debug_print_tool_call_details(tool)
 
         # Execute functions in parallel
-        with ThreadPoolExecutor(max_workers=2) as executor:
+        with ThreadPoolExecutor(max_workers=self._max_workers) as executor:
             futures = [
                 executor.submit(
                     partial(
-                        self.execute_function,
+                        self.use_tool,
                         func_name,
                         func_arguments,
                         tool_call_id=tool_call_id,
@@ -93,7 +97,15 @@ class FunctionToolBox:
             ]
             tool_outputs = [future.result() for future in futures]
 
-        return tool_outputs
+        # Submit tool outputs if requested
+        run_submitted = (
+            openai_client.beta.threads.runs.submit_tool_outputs(
+                thread_id=run.thread_id, run_id=run.id, tool_outputs=tool_outputs
+            )
+            if submit_tool_outputs
+            else None
+        )
+        return (tool_outputs, run_submitted)
 
     def execute_function(
         self,
