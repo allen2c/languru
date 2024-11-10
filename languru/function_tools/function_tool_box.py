@@ -43,8 +43,8 @@ class FunctionToolBox:
         self._func_tool_models: Dict[Text, Type["FunctionToolRequestBaseModel"]] = {
             t.FUNCTION_NAME: t for t in function_tool_models
         }
-        self._max_workers = max_workers
-        self._debug = debug
+        self.max_workers = max_workers
+        self.debug = debug
 
     @property
     def function_tools(self) -> List["FunctionTool"]:
@@ -59,7 +59,7 @@ class FunctionToolBox:
         func_tool_output = self.execute_function(
             name, arguments, tool_call_id=tool_call_id
         )
-        if self._debug:
+        if self.debug:
             _debug_print_tool_output(func_tool_output)
         return func_tool_output
 
@@ -81,9 +81,11 @@ class FunctionToolBox:
             execute_func_params.append(
                 (tool.function.name, tool.function.arguments, tool.id)
             )
+            if self.debug:
+                _debug_print_tool_call_details(tool)
 
         # Execute functions in parallel
-        with ThreadPoolExecutor(max_workers=self._max_workers) as executor:
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             futures = [
                 executor.submit(
                     partial(
@@ -181,20 +183,26 @@ class FunctionToolBox:
 
 
 def _debug_print_tool_call_details(tool: "RequiredActionFunctionToolCall") -> None:
-    console.print(f"\n[bold green]Tool Call (id={tool.id}) Details:[/]")
-    console.print(
-        f"[bold bright_green]Tool Name:[/] [bright_cyan]{tool.function.name}[/]"
-    )
-    console.print(
-        "[bold bright_green]Tool Arguments:[/] [bright_cyan]"
-        + f"{tool.function.arguments}[/]"
-    )
+    try:
+        console.print(f"\n[bold green]Tool Call (id={tool.id}) Details:[/]")
+        console.print(
+            f"[bold bright_green]Tool Name:[/] [bright_cyan]{tool.function.name}[/]"
+        )
+        console.print(
+            "[bold bright_green]Tool Arguments:[/] [bright_cyan]"
+            + f"{tool.function.arguments}[/]"
+        )
+    except Exception as e:
+        logger.exception(e)
 
 
 def _debug_print_tool_output(
     tool_output: "run_submit_tool_outputs_params.ToolOutput",
 ) -> None:
-    console.print(
-        "[bold bright_green]Tool Output:[/] [bright_cyan]"
-        + f"{tool_output.get('output') or 'N/A'}[/]"
-    )
+    try:
+        console.print(
+            "[bold bright_green]Tool Output:[/] [bright_cyan]"
+            + f"{tool_output.get('output') or 'N/A'}[/]"
+        )
+    except Exception as e:
+        logger.exception(e)
