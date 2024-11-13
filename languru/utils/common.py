@@ -159,7 +159,8 @@ def display_messages(
     _messages = [
         m.model_dump() if isinstance(m, BaseModel) else dict(m) for m in messages
     ]
-    _messages.sort(key=lambda x: x.get("created_at"))  # type: ignore
+    if all(m.get("created_at") for m in _messages):
+        _messages.sort(key=lambda x: x.get("created_at"))  # type: ignore
 
     # Initialize output
     out = ""
