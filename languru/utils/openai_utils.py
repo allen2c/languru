@@ -17,6 +17,7 @@ from typing import (
 from xml.sax.saxutils import escape as xml_escape
 
 import numpy as np
+from diskcache import Cache
 from numpy.typing import DTypeLike
 from openai import NotFoundError, OpenAI
 from openai.types.beta.assistant import Assistant
@@ -30,8 +31,10 @@ from languru.config import logger
 from languru.types.chat.completions import Message
 
 if TYPE_CHECKING:
-    from diskcache import Cache
     from redis import Redis
+
+
+cache = Cache("/tmp/.languru_cache")
 
 
 def rand_openai_id(
@@ -374,7 +377,7 @@ def ensure_assistant(
     assistant_model: Text = "gpt-4o-mini",
     assistant_temperature: float = 0.3,
     assistant_tools: Optional[Iterable["FunctionTool"]] = None,
-    cache: Optional[Union["Cache", "Redis"]] = None,
+    cache: Optional[Union["Cache", "Redis"]] = cache,
     expire: int = 5 * 60,  # 5 minutes
 ) -> "Assistant":
     assistant: Optional["Assistant"] = None
