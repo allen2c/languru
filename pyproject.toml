@@ -19,12 +19,16 @@ cyksuid = ">=2"
 diskcache = "^5"
 duckdb = ">=1"
 email-validator = "^2"
+faker = "*"
+fakeredis = "^2"
 fastapi = { extras = ["all"], version = "<1,>=0.109.0" }
 flashrank = { version = "^0", extras = ["listwise"], optional = true }
 google-cloud-aiplatform = "^1.38"
 google-generativeai = "<1,>=0.3.2,!=0.7.1"
+googlemaps = "*"
 googlesearch-python = { version = "*", optional = true }
 groq = "<1,>=0.4.2"
+json-repair = "*"
 openai = "^1.10.0"
 packaging = ">=23"
 pandas = ">2"
@@ -40,6 +44,7 @@ pyjson5 = "^1.6"
 python = ">=3.10,<4.0"
 python-dotenv = "^1"
 pytz = ">=2024.1"
+redis = "^5"
 rich = "^13"
 sentence-transformers = { version = "^3", optional = true }
 sentencepiece = { version = "<1,>=0.1.99" }

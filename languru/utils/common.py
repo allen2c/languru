@@ -1,6 +1,7 @@
 import itertools
 import json
 import string
+from datetime import datetime
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
@@ -24,6 +25,7 @@ from typing import (
     overload,
 )
 
+import pytz
 from openai.types.beta.threads.message import Message as ThreadsMessage
 from pydantic import BaseModel
 from pydantic_core import ValidationError
@@ -157,6 +159,8 @@ def display_messages(
     _messages = [
         m.model_dump() if isinstance(m, BaseModel) else dict(m) for m in messages
     ]
+    if all(m.get("created_at") for m in _messages):
+        _messages.sort(key=lambda x: x.get("created_at"))  # type: ignore
 
     # Initialize output
     out = ""
@@ -164,12 +168,13 @@ def display_messages(
     if is_print:
         table = Table(title=table_title, width=table_width)
         table.add_column("Role", justify="right", style="bold cyan")
-        table.add_column("Content", justify="left")
+        table.add_column("Content", justify="left", no_wrap=True)
 
     # Read messages
     for m in _messages:
         role = str(m.get("role") or "Unknown").capitalize()
-        content = m.get("content") or "n/a"
+        content: Text | List[Dict] = m.get("content") or "n/a"  # type: ignore
+        tool_calls: List[Dict] = m.get("tool_calls") or []  # type: ignore
         if isinstance(content, List):  # OpenAI Threads messages
             _content = ""
             for content_block in content:
@@ -189,6 +194,12 @@ def display_messages(
                 else:
                     _content += str(content_block)
             content = _content
+        elif tool_calls:
+            for tool_call in tool_calls:
+                tool_call_id = tool_call.get("id") or "n/a"
+                func_name = get_safe_value(tool_call, "function", "name")
+                func_args_str = get_safe_value(tool_call, "function", "arguments")
+                content += f"\n\nToolCall:{tool_call_id}:{func_name}({func_args_str})"
         else:
             content = str(content)
 
@@ -406,3 +417,21 @@ def chunks(
     while chunk:
         yield chunk
         chunk = tuple(itertools.islice(it, batch_size))
+
+
+def display_datetime_now(tz: pytz.BaseTzInfo = pytz.timezone("Asia/Taipei")) -> Text:
+
+    now = datetime.now(tz)
+    return now.strftime("%A, %B %d, %Y %I:%M %p (%Z, UTC%z)")
+
+
+def get_safe_value(obj: Dict, *keys: Text, default: Any = None) -> Any:
+    """Safely get nested dictionary values"""
+
+    try:
+        result = obj
+        for key in keys:
+            result = result[key]
+        return result
+    except (KeyError, TypeError, IndexError):
+        return default
