@@ -181,6 +181,7 @@ if __name__ == "__main__":
         assistant_temperature=0.3,
         assistant_tools=function_tool_box.function_tools,
     )
+    languru.utils.openai_utils.display_assistant(assistant, is_print=True)
 
     thread = client.beta.threads.create()
     client.beta.threads.messages.create(

@@ -20,13 +20,14 @@ from openai.types.beta.threads import run_submit_tool_outputs_params
 from openai.types.shared.function_definition import FunctionDefinition
 from pydantic import BaseModel
 
-from languru.config import console, logger
-from languru.utils.openai_utils import rand_openai_id
+from languru.config import logger
+from languru.utils.openai_utils import (
+    display_tool_call_details,
+    display_tool_output,
+    rand_openai_id,
+)
 
 if TYPE_CHECKING:
-    from openai.types.beta.threads.required_action_function_tool_call import (
-        RequiredActionFunctionToolCall,
-    )
     from openai.types.beta.threads.run import Run
 
     from languru.function_tools.function_base_model import FunctionToolRequestBaseModel
@@ -60,7 +61,7 @@ class FunctionToolBox:
             name, arguments, tool_call_id=tool_call_id
         )
         if self.debug:
-            _debug_print_tool_output(func_tool_output)
+            display_tool_output(func_tool_output)
         return func_tool_output
 
     def handle_openai_thread_run_tool_calls(
@@ -82,7 +83,7 @@ class FunctionToolBox:
                 (tool.function.name, tool.function.arguments, tool.id)
             )
             if self.debug:
-                _debug_print_tool_call_details(tool)
+                display_tool_call_details(tool)
 
         # Execute functions in parallel
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
@@ -180,31 +181,3 @@ class FunctionToolBox:
 
     def to_definitions(self) -> List[FunctionDefinition]:
         return [t.to_function_definition() for t in self._func_tool_models.values()]
-
-
-def _debug_print_tool_call_details(tool: "RequiredActionFunctionToolCall") -> None:
-    try:
-        console.print(f"\n[bold green]Tool Call (id={tool.id}) Details:[/]")
-        console.print(
-            f"[bold bright_green]Tool Name:[/] [bright_cyan]{tool.function.name}[/]"
-        )
-        console.print(
-            "[bold bright_green]Tool Arguments:[/] [bright_cyan]"
-            + f"{tool.function.arguments}[/]"
-        )
-    except Exception as e:
-        logger.exception(e)
-
-
-def _debug_print_tool_output(
-    tool_output: "run_submit_tool_outputs_params.ToolOutput", *, max_length: int = 300
-) -> None:
-    try:
-        output_content = tool_output.get("output") or "N/A"
-        if len(output_content) > max_length:
-            output_content = output_content[:max_length] + "..."
-        console.print(
-            f"[bold bright_green]Tool Output:[/] [bright_cyan]{output_content}[/]"
-        )
-    except Exception as e:
-        logger.exception(e)

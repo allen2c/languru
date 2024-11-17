@@ -17,22 +17,38 @@ from typing import (
 from xml.sax.saxutils import escape as xml_escape
 
 import numpy as np
+import rich.box
+import rich.panel
 from diskcache import Cache
 from numpy.typing import DTypeLike
 from openai import NotFoundError, OpenAI
 from openai.types.beta.assistant import Assistant
 from openai.types.beta.function_tool import FunctionTool
 from openai.types.beta.function_tool_param import FunctionToolParam
+from openai.types.beta.threads.required_action_function_tool_call import (
+    RequiredActionFunctionToolCall,
+)
+from openai.types.beta.threads.run_submit_tool_outputs_params import ToolOutput
 from openai.types.chat import ChatCompletionMessageParam
 from openai.types.chat.chat_completion import ChatCompletion
 from pyassorted.string.rand import rand_str
+from rich.text import Text as RT
 
-from languru.config import logger
+from languru.config import console, logger
 from languru.types.chat.completions import Message
 
 if TYPE_CHECKING:
     from redis import Redis
 
+
+style_key_val = (
+    lambda k, v, value_new_line=False, end_new_line=True: RT(
+        f"{k}", style="bold bright_cyan"
+    )
+    + RT(":\n" if value_new_line else ": ", style="default")
+    + RT(f"{v}", style="bright_blue")
+    + RT("\n" if end_new_line else "", style="default")
+)
 
 cache = Cache("/tmp/.languru_cache")
 
@@ -417,3 +433,99 @@ def ensure_assistant(
         )
 
     return assistant
+
+
+def display_assistant(
+    assistant: "Assistant", *, is_print: bool = True, max_length: int = 300
+) -> RT:
+    if not assistant or not isinstance(assistant, Assistant):
+        return RT("Input is not an instance of Assistant.")
+
+    try:
+        title = style_key_val("Assistant", assistant.id)
+        _tools_names = [
+            f"{t.function.name}" for t in assistant.tools if t.type == "function"
+        ]
+        _tools_expr = ", ".join(_tools_names) or "N/A"
+        _inst = (
+            (
+                assistant.instructions[:max_length] + "..."
+                if len(assistant.instructions) > max_length
+                else assistant.instructions
+            )
+            if assistant.instructions
+            else "N/A"
+        )
+
+        content = RT("")
+        content += style_key_val("Name", assistant.name)
+        content += style_key_val("Model", assistant.model)
+        content += style_key_val("Temperature", assistant.temperature)
+        content += style_key_val("Tools", _tools_expr)
+        content += style_key_val(
+            "Instructions", _inst, value_new_line=True, end_new_line=False
+        )
+
+        if is_print:
+            console.print(
+                rich.panel.Panel(content, title=title, box=rich.box.HORIZONTALS)
+            )
+    except Exception as e:
+        console.print_exception()
+        return RT(f"Error displaying assistant: {e}")
+
+    return content
+
+
+def display_tool_call_details(
+    tool: "RequiredActionFunctionToolCall", *, is_print: bool = True
+) -> RT:
+    if not tool:
+        return RT("Input is not an instance of RequiredActionFunctionToolCall.")
+
+    try:
+        content = RT("")
+        title = style_key_val("Tool Call", tool.id)
+        content += style_key_val("Tool Name", tool.function.name)
+        content += style_key_val(
+            "Tool Arguments", tool.function.arguments, end_new_line=False
+        )
+        if is_print:
+            console.print(
+                rich.panel.Panel(content, title=title, box=rich.box.HORIZONTALS)
+            )
+    except Exception as e:
+        logger.exception(e)
+        return RT(f"Error displaying tool call details: {e}")
+    return content
+
+
+def display_tool_output(
+    tool_output: "ToolOutput", *, is_print: bool = True, max_length: int = 300
+) -> RT:
+    if not tool_output:
+        return RT("Input is not an instance of ToolOutput.")
+
+    try:
+        title = style_key_val("Tool Output", tool_output.get("tool_call_id"))
+        content = RT("")
+        output_content = tool_output.get("output") or "N/A"
+        output_content = (
+            output_content[:max_length] + "..."
+            if len(output_content) > max_length
+            else output_content
+        )
+        content += style_key_val(
+            "Output", output_content, value_new_line=True, end_new_line=False
+        )
+
+        if is_print:
+            console.print(
+                rich.panel.Panel(content, title=title, box=rich.box.HORIZONTALS)
+            )
+
+    except Exception as e:
+        logger.exception(e)
+        return RT(f"Error displaying tool output: {e}")
+
+    return content
