@@ -197,12 +197,14 @@ def _debug_print_tool_call_details(tool: "RequiredActionFunctionToolCall") -> No
 
 
 def _debug_print_tool_output(
-    tool_output: "run_submit_tool_outputs_params.ToolOutput",
+    tool_output: "run_submit_tool_outputs_params.ToolOutput", *, max_length: int = 300
 ) -> None:
     try:
+        output_content = tool_output.get("output") or "N/A"
+        if len(output_content) > max_length:
+            output_content = output_content[:max_length] + "..."
         console.print(
-            "[bold bright_green]Tool Output:[/] [bright_cyan]"
-            + f"{tool_output.get('output') or 'N/A'}[/]"
+            f"[bold bright_green]Tool Output:[/] [bright_cyan]{output_content}[/]"
         )
     except Exception as e:
         logger.exception(e)
