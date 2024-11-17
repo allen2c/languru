@@ -119,11 +119,16 @@ class RunsWithToolbox(openai.resources.beta.threads.runs.Runs):
             run = response.parse()
 
             # OVERRIDE: Implement function tool calls
-            if run.status == "requires_action" and self._client.function_toolbox:
+            if run.status == "requires_action":
+                if self._client.function_toolbox is None:
+                    raise ValueError(
+                        "Function toolbox is not set, "
+                        + "please add toolbox to OpenAIWithToolbox client"
+                    )
                 self._client.function_toolbox.handle_openai_thread_run_tool_calls(
                     run, openai_client=self._client
                 )
-            # END OVERRIDE
+            # END OF OVERRIDE
 
             # Return if we reached a terminal state
             elif run.status in terminal_states:
@@ -140,8 +145,57 @@ class RunsWithToolbox(openai.resources.beta.threads.runs.Runs):
 
 
 if __name__ == "__main__":
-    client = OpenAIWithToolbox()
-    run = client.beta.threads.runs.create_and_poll(
-        assistant_id="asst_123", thread_id="thread_123"
+    from pathlib import Path
+
+    import __main__
+
+    import languru.utils.common
+    import languru.utils.openai_utils
+    from languru.function_tools.functions.azure.get_weather_forecast_daily import (
+        GetWeatherForecastDaily,
     )
-    print(run)
+    from languru.function_tools.functions.azure.get_weather_forecast_hourly import (
+        GetWeatherForecastHourly,
+    )
+    from languru.function_tools.functions.google.get_maps_geocode import GetMapsGeocode
+
+    assistant_name = "assistant_with_tools_basic"
+    with open(
+        Path(__main__.__file__)
+        .parent.parent.joinpath("prompts/repositories/assistant_with_tools_basic.txt")
+        .resolve(),
+        "r",
+    ) as f:
+        assistant_instructions = f.read()
+
+    function_tool_box = FunctionToolBox(
+        [GetWeatherForecastDaily, GetWeatherForecastHourly, GetMapsGeocode], debug=True
+    )
+    client = OpenAIWithToolbox(function_toolbox=function_tool_box)
+    assistant = languru.utils.openai_utils.ensure_assistant(
+        assistant_name,
+        openai_client=client,
+        assistant_name=assistant_name,
+        assistant_instructions=assistant_instructions,
+        assistant_model="gpt-4o-mini",
+        assistant_temperature=0.3,
+        assistant_tools=function_tool_box.function_tools,
+    )
+
+    thread = client.beta.threads.create()
+    client.beta.threads.messages.create(
+        thread_id=thread.id,
+        role="user",
+        content=(
+            "<meta>"
+            + f"Message sent at {languru.utils.common.display_datetime_now()}"
+            + "</meta>\n"
+            + "How is the weather in bamboo lake, Yangmingshan next week?"
+        ),
+    )
+    run = client.beta.threads.runs.create_and_poll(
+        assistant_id=assistant.id, thread_id=thread.id
+    )
+    languru.utils.common.display_messages(
+        client.beta.threads.messages.list(thread_id=thread.id).data
+    )
