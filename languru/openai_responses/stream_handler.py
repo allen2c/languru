@@ -1,10 +1,11 @@
+import copy
 import logging
 import typing
 
 import httpx
 import openai
 from openai._types import NOT_GIVEN, Body, Headers, NotGiven, Query
-from openai.types.responses import response_create_params
+from openai.types.responses import parsed_response, response_create_params
 from openai.types.responses.response_audio_delta_event import ResponseAudioDeltaEvent
 from openai.types.responses.response_audio_done_event import ResponseAudioDoneEvent
 from openai.types.responses.response_audio_transcript_delta_event import (
@@ -139,7 +140,7 @@ class OpenAIResponseStreamHandler:
         **kwargs,
     ):
         self.__openai_client = openai_client
-        self.__input = input
+        self.__input = copy.deepcopy(input)
         self.__model = model
         self.__include = include
         self.__instructions = instructions
@@ -164,12 +165,22 @@ class OpenAIResponseStreamHandler:
         self.__extra_body = extra_body
         self.__timeout = timeout
 
-    async def run_until_done(self) -> None:
+        self.__closed = False
+
+    async def run_until_done(self, *, limit: int = 10) -> None:
+        if self.__closed:
+            raise RuntimeError("Stream handler is designed to be used once")
+        if limit <= 0 or limit > 25:
+            raise ValueError("Limit must be between 1 and 25")
+
         required_action: bool = True
 
+        current_limit = 0
         previous_response_id = self.__previous_response_id
 
-        while required_action:
+        while required_action and current_limit <= limit:
+            current_limit += 1
+
             async with self.__openai_client.responses.stream(
                 input=self.__input,
                 model=self.__model,
@@ -195,6 +206,42 @@ class OpenAIResponseStreamHandler:
             ) as stream:
                 async for event in stream:
                     await self.__on_event(event)
+
+                await stream.until_done()
+
+                final_response = await stream.get_final_response()
+
+                self.__previous_response_id = final_response.id
+
+                _required_action_calls: typing.List[
+                    parsed_response.ParsedResponseFunctionToolCall
+                ] = []
+
+                for output in final_response.output:
+                    if output.type == "message":
+                        pass  # No required action
+                    elif output.type == "function_call":
+                        _required_action_calls.append(output)
+                    elif output.type == "file_search_call":
+                        pass  # Not implemented
+                    elif output.type == "web_search_call":
+                        pass  # Not implemented
+                    elif output.type == "computer_call":
+                        pass  # Not implemented
+                    elif output.type == "reasoning":
+                        pass  # No required action
+                    else:
+                        logger.warning(f"Unhandled response.output.type: {output.type}")
+
+                if len(_required_action_calls) == 0:
+                    required_action = False
+                    logger.info("No required action calls")
+
+                else:
+                    required_action = True
+                    logger.info(f"Required action calls: {len(_required_action_calls)}")
+
+        self.__closed = True
 
     async def __on_event(self, event: ResponseStreamEvent) -> None:
         await self.on_event(event)
@@ -463,3 +510,7 @@ class OpenAIResponseStreamHandler:
     ):
         """Handle web search call searching events."""
         pass
+
+    @property
+    def closed(self) -> bool:
+        return self.__closed
