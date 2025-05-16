@@ -1,4 +1,5 @@
 import copy
+import agents
 import logging
 import typing
 
@@ -11,12 +12,16 @@ from openai.types.responses.response_audio_done_event import ResponseAudioDoneEv
 from openai.types.responses.response_audio_transcript_delta_event import (
     ResponseAudioTranscriptDeltaEvent,
 )
+from openai.types.responses.response_function_tool_call import ResponseFunctionToolCall
+import logfire
+from languru.openai_agents.messages import MessageBuilder
 from openai.types.responses.response_audio_transcript_done_event import (
     ResponseAudioTranscriptDoneEvent,
 )
 from openai.types.responses.response_code_interpreter_call_code_delta_event import (
     ResponseCodeInterpreterCallCodeDeltaEvent,
 )
+from languru.openai_shared.tools import function_tool_to_responses_tool_param
 from openai.types.responses.response_code_interpreter_call_code_done_event import (
     ResponseCodeInterpreterCallCodeDoneEvent,
 )
@@ -96,7 +101,7 @@ from openai.types.responses.response_web_search_call_in_progress_event import (
 from openai.types.responses.response_web_search_call_searching_event import (
     ResponseWebSearchCallSearchingEvent,
 )
-from openai.types.responses.tool_param import ToolParam
+
 from openai.types.shared_params.metadata import Metadata
 from openai.types.shared_params.reasoning import Reasoning
 from openai.types.shared_params.responses_model import ResponsesModel
@@ -127,7 +132,9 @@ class OpenAIResponseStreamHandler:
         temperature: typing.Optional[float] | NotGiven = NOT_GIVEN,
         text: ResponseTextConfigParam | NotGiven = NOT_GIVEN,
         tool_choice: response_create_params.ToolChoice | NotGiven = NOT_GIVEN,
-        tools: typing.Iterable[ToolParam] | NotGiven = NOT_GIVEN,
+        tools: (
+            typing.Iterable[agents.FunctionTool] | NotGiven
+        ) = NOT_GIVEN,  # Use agents.FunctionTool instead of ToolParam
         top_p: typing.Optional[float] | NotGiven = NOT_GIVEN,
         truncation: (
             typing.Optional[typing.Literal["auto", "disabled"]] | NotGiven
@@ -140,7 +147,11 @@ class OpenAIResponseStreamHandler:
         **kwargs,
     ):
         self.__openai_client = openai_client
-        self.__input = copy.deepcopy(input)
+        self.__input = (
+            [MessageBuilder.easy_input_message(content=input, role="user")]
+            if isinstance(input, str)
+            else copy.deepcopy(input)
+        )
         self.__model = model
         self.__include = include
         self.__instructions = instructions
@@ -184,7 +195,14 @@ class OpenAIResponseStreamHandler:
             async with self.__openai_client.responses.stream(
                 input=self.__input,
                 model=self.__model,
-                tools=self.__tools,
+                tools=(
+                    [
+                        function_tool_to_responses_tool_param(tool)
+                        for tool in self.__tools
+                    ]
+                    if self.__tools is not None and isinstance(self.__tools, list)
+                    else NOT_GIVEN
+                ),
                 include=self.__include,
                 instructions=self.__instructions,
                 max_output_tokens=self.__max_output_tokens,
@@ -241,7 +259,80 @@ class OpenAIResponseStreamHandler:
                     required_action = True
                     logger.info(f"Required action calls: {len(_required_action_calls)}")
 
+                    for required_action_call in _required_action_calls:
+
+                        self.__input.append(
+                            MessageBuilder.response_function_tool_call(
+                                arguments=required_action_call.arguments,
+                                call_id=required_action_call.call_id,
+                                name=required_action_call.name,
+                                type="function_call",
+                            )
+                        )
+                        action_output = await self.execute_action_call(
+                            required_action_call
+                        )
+
         self.__closed = True
+
+    async def execute_action_call(
+        self,
+        required_action_call: (
+            parsed_response.ParsedResponseFunctionToolCall
+            | parsed_response.ResponseFileSearchToolCall
+            | parsed_response.ResponseComputerToolCall
+        ),
+        **kwargs,
+    ) -> typing.Text:
+        with logfire.span(f"execute_action_call:{required_action_call.call_id}"):
+            if required_action_call.type == "function_call":
+                return await self.execute_function_call(required_action_call, **kwargs)
+            elif required_action_call.type == "file_search_call":
+                return "Not implemented"
+            elif required_action_call.type == "computer_call":
+                return "Not implemented"
+            else:
+                logger.warning(
+                    "Not implemented required action call type: "
+                    + f"{required_action_call.type}"
+                )
+                return "Not implemented"
+
+    async def execute_function_call(
+        self,
+        required_function_call: (
+            parsed_response.ParsedResponseFunctionToolCall | ResponseFunctionToolCall
+        ),
+        **kwargs,
+    ) -> typing.Text:
+        with logfire.span(f"execute_action_call:{required_function_call.name}"):
+            if (
+                self.__tools == NOT_GIVEN
+                or isinstance(self.__tools, NotGiven)
+                or len(list(self.__tools)) == 0
+            ):
+                logger.error(
+                    f"No tools provided but got tool call: {required_function_call}"
+                )
+                return "Not available currently"
+
+            func_tool: agents.FunctionTool
+            for tool in self.__tools:
+                if tool.name == required_function_call.name:
+                    func_tool = tool
+                    break
+            else:
+                logger.error(
+                    f"Function tool not found: {required_function_call.name}, "
+                    + f"available tools: {', '.join([tool.name for tool in self.__tools])}"
+                )
+                return "Not available currently"
+
+            try:
+                return func_tool.func()
+
+            except Exception as e:
+                pass
 
     async def __on_event(self, event: ResponseStreamEvent) -> None:
         await self.on_event(event)
