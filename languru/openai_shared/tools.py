@@ -2,6 +2,7 @@ import typing
 
 import agents
 import pydantic
+from openai.types.responses.function_tool_param import FunctionToolParam
 
 
 def base_model_to_function_tool(
@@ -18,6 +19,18 @@ def base_model_to_function_tool(
         description=description,
         params_json_schema=validate_json_schema(base_model.model_json_schema()),
         on_invoke_tool=on_invoke_tool,
+    )
+
+
+def function_tool_to_responses_tool_param(
+    function_tool: agents.FunctionTool,
+) -> FunctionToolParam:
+    return FunctionToolParam(
+        name=function_tool.name,
+        parameters=function_tool.params_json_schema,
+        strict=function_tool.strict_json_schema,
+        type="function",
+        description=function_tool.description,
     )
 
 

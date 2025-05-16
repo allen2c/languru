@@ -8,7 +8,7 @@ from agents.extensions.handoff_prompt import prompt_with_handoff_instructions
 from languru.examples.tools import GetTimeNow
 from languru.openai_agents.messages import MessageBuilder
 from languru.openai_agents.stream_handler import OpenAIAgentsStreamHandler
-from languru.openai_agents.tools import base_model_to_function_tool
+from languru.openai_shared.tools import base_model_to_function_tool
 
 
 @pytest.mark.asyncio
