@@ -1,8 +1,10 @@
 import logging
-from typing import AsyncIterator
+import typing
 
-from openai._streaming import AsyncStream
-from openai.types.responses import ResponseStreamEvent
+import httpx
+import openai
+from openai._types import NOT_GIVEN, Body, Headers, NotGiven, Query
+from openai.types.responses import response_create_params
 from openai.types.responses.response_audio_delta_event import ResponseAudioDeltaEvent
 from openai.types.responses.response_audio_done_event import ResponseAudioDoneEvent
 from openai.types.responses.response_audio_transcript_delta_event import (
@@ -52,7 +54,9 @@ from openai.types.responses.response_function_call_arguments_done_event import (
     ResponseFunctionCallArgumentsDoneEvent,
 )
 from openai.types.responses.response_in_progress_event import ResponseInProgressEvent
+from openai.types.responses.response_includable import ResponseIncludable
 from openai.types.responses.response_incomplete_event import ResponseIncompleteEvent
+from openai.types.responses.response_input_param import ResponseInputParam
 from openai.types.responses.response_output_item_added_event import (
     ResponseOutputItemAddedEvent,
 )
@@ -75,9 +79,11 @@ from openai.types.responses.response_refusal_delta_event import (
     ResponseRefusalDeltaEvent,
 )
 from openai.types.responses.response_refusal_done_event import ResponseRefusalDoneEvent
+from openai.types.responses.response_stream_event import ResponseStreamEvent
 from openai.types.responses.response_text_annotation_delta_event import (
     ResponseTextAnnotationDeltaEvent,
 )
+from openai.types.responses.response_text_config_param import ResponseTextConfigParam
 from openai.types.responses.response_text_delta_event import ResponseTextDeltaEvent
 from openai.types.responses.response_text_done_event import ResponseTextDoneEvent
 from openai.types.responses.response_web_search_call_completed_event import (
@@ -89,21 +95,106 @@ from openai.types.responses.response_web_search_call_in_progress_event import (
 from openai.types.responses.response_web_search_call_searching_event import (
     ResponseWebSearchCallSearchingEvent,
 )
+from openai.types.responses.tool_param import ToolParam
+from openai.types.shared_params.metadata import Metadata
+from openai.types.shared_params.reasoning import Reasoning
+from openai.types.shared_params.responses_model import ResponsesModel
 
 logger = logging.getLogger(__name__)
 
 
 class OpenAIResponseStreamHandler:
-    def __init__(self, stream: AsyncStream[ResponseStreamEvent]):
-        self.stream = stream
+    def __init__(
+        self,
+        openai_client: openai.AsyncOpenAI,
+        *,
+        input: typing.Union[str, ResponseInputParam],
+        model: ResponsesModel,
+        include: (
+            typing.Optional[typing.List[ResponseIncludable]] | NotGiven
+        ) = NOT_GIVEN,
+        instructions: typing.Optional[str] | NotGiven = NOT_GIVEN,
+        max_output_tokens: typing.Optional[int] | NotGiven = NOT_GIVEN,
+        metadata: typing.Optional[Metadata] | NotGiven = NOT_GIVEN,
+        parallel_tool_calls: typing.Optional[bool] | NotGiven = NOT_GIVEN,
+        previous_response_id: typing.Optional[str] | NotGiven = NOT_GIVEN,
+        reasoning: typing.Optional[Reasoning] | NotGiven = NOT_GIVEN,
+        service_tier: (
+            typing.Optional[typing.Literal["auto", "default", "flex"]] | NotGiven
+        ) = NOT_GIVEN,
+        store: typing.Optional[bool] | NotGiven = NOT_GIVEN,
+        temperature: typing.Optional[float] | NotGiven = NOT_GIVEN,
+        text: ResponseTextConfigParam | NotGiven = NOT_GIVEN,
+        tool_choice: response_create_params.ToolChoice | NotGiven = NOT_GIVEN,
+        tools: typing.Iterable[ToolParam] | NotGiven = NOT_GIVEN,
+        top_p: typing.Optional[float] | NotGiven = NOT_GIVEN,
+        truncation: (
+            typing.Optional[typing.Literal["auto", "disabled"]] | NotGiven
+        ) = NOT_GIVEN,
+        user: str | NotGiven = NOT_GIVEN,
+        extra_headers: Headers | None = None,
+        extra_query: Query | None = None,
+        extra_body: Body | None = None,
+        timeout: float | httpx.Timeout | None | NotGiven = NOT_GIVEN,
+        **kwargs,
+    ):
+        self.__openai_client = openai_client
+        self.__input = input
+        self.__model = model
+        self.__include = include
+        self.__instructions = instructions
+        self.__max_output_tokens = max_output_tokens
+        self.__metadata = metadata
+        self.__parallel_tool_calls = parallel_tool_calls
+        self.__previous_response_id = previous_response_id
+        self.__reasoning = reasoning
+        self.__service_tier = service_tier
+        self.__store = store
+        self.__temperature = temperature
+        self.__text = text
+        self.__tool_choice: response_create_params.ToolChoice | NotGiven = tool_choice
+        self.__tools = tools
+        self.__top_p = top_p
+        self.__truncation: NotGiven | typing.Literal["auto", "disabled"] | None = (
+            truncation
+        )
+        self.__user = user
+        self.__extra_headers = extra_headers
+        self.__extra_query = extra_query
+        self.__extra_body = extra_body
+        self.__timeout = timeout
 
-    async def __aiter__(self) -> AsyncIterator[ResponseStreamEvent]:
-        async for event in self.stream:
-            await self.__on_event(event)
-            yield event
+    async def run_until_done(self) -> None:
+        required_action: bool = True
 
-    async def __anext__(self):
-        return await self.stream.__anext__()
+        previous_response_id = self.__previous_response_id
+
+        while required_action:
+            async with self.__openai_client.responses.stream(
+                input=self.__input,
+                model=self.__model,
+                tools=self.__tools,
+                include=self.__include,
+                instructions=self.__instructions,
+                max_output_tokens=self.__max_output_tokens,
+                metadata=self.__metadata,
+                parallel_tool_calls=self.__parallel_tool_calls,
+                previous_response_id=previous_response_id,
+                reasoning=self.__reasoning,
+                store=self.__store,
+                temperature=self.__temperature,
+                text=self.__text,
+                tool_choice=self.__tool_choice,
+                top_p=self.__top_p,
+                truncation=self.__truncation,
+                user=self.__user,
+                extra_headers=self.__extra_headers,
+                extra_query=self.__extra_query,
+                extra_body=self.__extra_body,
+                timeout=self.__timeout,
+            ) as stream:
+                async for event in stream:
+                    await self.__on_event(event)
 
     async def __on_event(self, event: ResponseStreamEvent) -> None:
         await self.on_event(event)
