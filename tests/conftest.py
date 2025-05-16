@@ -1,3 +1,5 @@
+import pathlib
+import tempfile
 import typing
 
 import openai
@@ -52,3 +54,9 @@ def openai_async_client(deps_logfire: typing.Literal[None]):
     _client = openai.AsyncOpenAI()
     logfire.instrument_openai(_client)
     return _client
+
+
+@pytest.fixture(scope="module")
+def temp_dir():
+    with tempfile.TemporaryDirectory() as temp_dir:
+        yield pathlib.Path(temp_dir)
