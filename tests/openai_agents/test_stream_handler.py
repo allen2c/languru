@@ -14,7 +14,10 @@ from languru.openai_agents.tools import base_model_to_function_tool
 @pytest.mark.asyncio
 async def test_openai_agents_stream_handler_simple(
     openai_async_client: openai.AsyncOpenAI,
+    instrument_openai_agents: typing.Literal[None],
 ):
+    assert instrument_openai_agents is None
+
     tools: typing.List[agents.tool.Tool] = [
         base_model_to_function_tool(
             GetTimeNow.GetTimeNowArgs,

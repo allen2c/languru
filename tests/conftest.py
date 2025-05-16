@@ -4,7 +4,7 @@ import openai
 import pytest
 
 
-@pytest.fixture(scope="module", autouse=True)
+@pytest.fixture(scope="module")
 def deps_logging():
     import logging
 
@@ -14,7 +14,7 @@ def deps_logging():
     return None
 
 
-@pytest.fixture(scope="module", autouse=True)
+@pytest.fixture(scope="module")
 def deps_logfire():
     import logfire
 
@@ -27,8 +27,8 @@ def deps_logfire():
     return None
 
 
-@pytest.fixture(scope="module", autouse=True)
-def openai_agents(deps_logfire: typing.Literal[None]):
+@pytest.fixture(scope="module")
+def instrument_openai_agents(deps_logfire: typing.Literal[None]):
     import logfire
 
     logfire.instrument_openai_agents()
