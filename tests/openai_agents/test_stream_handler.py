@@ -29,29 +29,29 @@ async def test_openai_agents_stream_handler_simple(
         tools=tools,
     )
 
-    input_messages: typing.List[agents.items.TResponseInputItem] = []
+    messages_history: typing.List[agents.items.TResponseInputItem] = []
+    previous_response_id: typing.Optional[str] = None
 
     for user_input in [
         "Hello world",
         "What I just said?",
         "What is the time in Tokyo?",
     ]:
-        input_messages.append(
-            {
-                "role": "user",
-                "content": [{"text": user_input, "type": "input_text"}],
-            }
+        runner = agents.Runner.run_streamed(
+            agent,
+            input=[
+                {
+                    "role": "user",
+                    "content": [{"text": user_input, "type": "input_text"}],
+                }
+            ],
+            previous_response_id=previous_response_id,
         )
+        handler = OpenAIAgentsStreamHandler(runner)
 
-    handler = OpenAIAgentsStreamHandler(
-        agents.Runner.run_streamed(agent, input_messages)
-    )
+        await handler.run_until_done()
 
-    async for event in handler.stream_events():
-        print()
-        print()
-        print()
-        print(event)
-        print()
-        print()
-        print()
+        previous_response_id = runner.last_response_id
+
+        print(runner.final_output)
+        messages_history.extend(runner.to_input_list())

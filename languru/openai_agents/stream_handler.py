@@ -116,6 +116,10 @@ class OpenAIAgentsStreamHandler:
             await self.__on_event(event)
             yield event
 
+    async def run_until_done(self) -> None:
+        async for event in self.stream_events():
+            await self.__on_event(event)
+
     async def __on_event(self, event: StreamEvent):
         await self.on_event(event)
 
