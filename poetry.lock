@@ -1741,6 +1741,22 @@ system-metrics = ["opentelemetry-instrumentation-system-metrics (>=0.42b0)"]
 wsgi = ["opentelemetry-instrumentation-wsgi (>=0.42b0)"]
 
 [[package]]
+name = "logging-bullet-train"
+version = "0.3.0"
+description = "A bullet-train style Python logging utils."
+optional = false
+python-versions = "<4.0,>=3.11"
+groups = ["main"]
+files = [
+    {file = "logging_bullet_train-0.3.0-py3-none-any.whl", hash = "sha256:7e12c5b91023aa25deafc4e782c95fc21d3d52a1dd8f5b8ff90d22b9f1b17dd8"},
+    {file = "logging_bullet_train-0.3.0.tar.gz", hash = "sha256:cf1ec725abbc9f55ad690851710a255260f797d471cc3b4893b53e1c4a66dc8e"},
+]
+
+[package.dependencies]
+colorama = "*"
+tzlocal = "*"
+
+[[package]]
 name = "markdown"
 version = "3.8"
 description = "Python implementation of John Gruber's Markdown."
@@ -3762,6 +3778,18 @@ anyio = ">=3.6.2,<5"
 full = ["httpx (>=0.27.0,<0.29.0)", "itsdangerous", "jinja2", "python-multipart (>=0.0.18)", "pyyaml"]
 
 [[package]]
+name = "str-or-none"
+version = "0.1.0"
+description = "Check a python value str or None simply."
+optional = false
+python-versions = "<4,>=3.8"
+groups = ["main"]
+files = [
+    {file = "str_or_none-0.1.0-py3-none-any.whl", hash = "sha256:2ee71ce3bffd169af56e5b85ba841f6af71d27bc4c93e49c51cbfe68f608caaf"},
+    {file = "str_or_none-0.1.0.tar.gz", hash = "sha256:ccced5fe5eb8d953fa1f1a708416366afe5a0e2682c3112c1843766a4633e808"},
+]
+
+[[package]]
 name = "tenacity"
 version = "9.1.2"
 description = "Retry code until it succeeds"
@@ -3924,6 +3952,24 @@ files = [
     {file = "tzdata-2025.2-py2.py3-none-any.whl", hash = "sha256:1a403fada01ff9221ca8044d701868fa132215d84beb92242d9acd2147f667a8"},
     {file = "tzdata-2025.2.tar.gz", hash = "sha256:b60a638fcc0daffadf82fe0f57e53d06bdec2f36c4df66280ae79bce6bd6f2b9"},
 ]
+
+[[package]]
+name = "tzlocal"
+version = "5.3.1"
+description = "tzinfo object for the local timezone"
+optional = false
+python-versions = ">=3.9"
+groups = ["main"]
+files = [
+    {file = "tzlocal-5.3.1-py3-none-any.whl", hash = "sha256:eb1a66c3ef5847adf7a834f1be0800581b683b5608e74f86ecbcef8ab91bb85d"},
+    {file = "tzlocal-5.3.1.tar.gz", hash = "sha256:cceffc7edecefea1f595541dbd6e990cb1ea3d19bf01b2809f362a03dd7921fd"},
+]
+
+[package.dependencies]
+tzdata = {version = "*", markers = "platform_system == \"Windows\""}
+
+[package.extras]
+devenv = ["check-manifest", "pytest (>=4.3)", "pytest-cov", "pytest-mock (>=3.3)", "zest.releaser"]
 
 [[package]]
 name = "urllib3"
@@ -4481,4 +4527,4 @@ all = []
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<4.0"
-content-hash = "bc27357173687a9889dca7ac6a70234b5d42125dc1cc766e44c4a6d05e26a611"
+content-hash = "ae8b5c4e2f8f108aeaf3e65086c9d902fd786a7185c1b708053626b0241af152"
