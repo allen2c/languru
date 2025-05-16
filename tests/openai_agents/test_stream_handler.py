@@ -6,6 +6,7 @@ import pytest
 from agents.extensions.handoff_prompt import prompt_with_handoff_instructions
 
 from languru.examples.tools import GetTimeNow
+from languru.openai_agents.messages import MessageBuilder
 from languru.openai_agents.stream_handler import OpenAIAgentsStreamHandler
 from languru.openai_agents.tools import base_model_to_function_tool
 
@@ -39,12 +40,7 @@ async def test_openai_agents_stream_handler_simple(
     ]:
         runner = agents.Runner.run_streamed(
             agent,
-            input=[
-                {
-                    "role": "user",
-                    "content": [{"text": user_input, "type": "input_text"}],
-                }
-            ],
+            input=[MessageBuilder.easy_input_message(content=user_input, role="user")],
             previous_response_id=previous_response_id,
         )
         handler = OpenAIAgentsStreamHandler(runner)
@@ -53,5 +49,4 @@ async def test_openai_agents_stream_handler_simple(
 
         previous_response_id = runner.last_response_id
 
-        print(runner.final_output)
         messages_history.extend(runner.to_input_list())
