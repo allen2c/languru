@@ -29,7 +29,7 @@ async def test_openai_agents_stream_handler_simple(
     agent = agents.Agent(
         name="Agent Manager",
         instructions=prompt_with_handoff_instructions("You are a concise assistant"),
-        model=agents.OpenAIChatCompletionsModel("gpt-4.1-nano", openai_async_client),
+        model=agents.OpenAIResponsesModel("gpt-4.1-nano", openai_async_client),
         tools=tools,
     )
 
@@ -38,7 +38,7 @@ async def test_openai_agents_stream_handler_simple(
 
     for user_input in [
         "Hello world",
-        "What I just said?",
+        "What I just said in previous chat?",
         "What is the time in Tokyo?",
     ]:
         runner = agents.Runner.run_streamed(
@@ -46,10 +46,17 @@ async def test_openai_agents_stream_handler_simple(
             input=[MessageBuilder.easy_input_message(content=user_input, role="user")],
             previous_response_id=previous_response_id,
         )
-        handler = OpenAIAgentsStreamHandler(runner)
+        handler = OpenAIAgentsStreamHandler(runner, messages_history)
 
         await handler.run_until_done()
 
-        previous_response_id = runner.last_response_id
+        assert handler.last_response_id is not None
+        previous_response_id = handler.last_response_id
 
-        messages_history.extend(runner.to_input_list())
+    assert any(
+        m.get("name") == "GetTimeNow" and m.get("type") == "function_call"
+        for m in messages_history
+    ), "The function call should be present in the messages history"
+    assert any(
+        m.get("type") == "function_call_output" for m in messages_history
+    ), "The function call output should be present in the messages history"

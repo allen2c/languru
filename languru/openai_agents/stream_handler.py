@@ -1,7 +1,9 @@
+import copy
 import logging
 import typing
 from collections.abc import AsyncIterator
 
+import agents
 from agents import (
     AgentUpdatedStreamEvent,
     RawResponsesStreamEvent,
@@ -108,13 +110,33 @@ logger = logging.getLogger(__name__)
 
 
 class OpenAIAgentsStreamHandler:
-    def __init__(self, run_result_streaming: RunResultStreaming):
+    def __init__(
+        self,
+        run_result_streaming: RunResultStreaming,
+        previous_messages: typing.Optional[
+            typing.List[agents.items.TResponseInputItem]
+        ] = None,
+    ):
+        """The `previous_messages` is a record of messages that will not be used in the run."""  # noqa: E501
         self.run_result_streaming = run_result_streaming
+        self.previous_messages = [] if previous_messages is None else previous_messages
+
+    @property
+    def last_response_id(self) -> typing.Optional[str]:
+        return self.run_result_streaming.last_response_id
+
+    @property
+    def messages_in_run(self) -> typing.List[agents.items.TResponseInputItem]:
+        return copy.deepcopy(self.previous_messages)
 
     async def stream_events(self) -> AsyncIterator[StreamEvent]:
         async for event in self.run_result_streaming.stream_events():
             await self.__on_event(event)
             yield event
+
+        self.previous_messages.extend(
+            copy.deepcopy(self.run_result_streaming.to_input_list())
+        )
 
     async def run_until_done(self) -> None:
         async for event in self.stream_events():

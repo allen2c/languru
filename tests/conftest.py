@@ -41,6 +41,7 @@ def openai_client(deps_logfire: typing.Literal[None]):
 
     _client = openai.OpenAI()
     logfire.instrument_openai(_client)
+    _client.models.list()
     return _client
 
 
