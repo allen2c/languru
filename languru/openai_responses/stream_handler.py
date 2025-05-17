@@ -1,10 +1,13 @@
 import copy
-import agents
 import logging
 import typing
 
+import agents
 import httpx
+import logfire
 import openai
+from agents.run_context import RunContextWrapper, TContext
+from agents.usage import Usage
 from openai._types import NOT_GIVEN, Body, Headers, NotGiven, Query
 from openai.types.responses import parsed_response, response_create_params
 from openai.types.responses.response_audio_delta_event import ResponseAudioDeltaEvent
@@ -12,20 +15,12 @@ from openai.types.responses.response_audio_done_event import ResponseAudioDoneEv
 from openai.types.responses.response_audio_transcript_delta_event import (
     ResponseAudioTranscriptDeltaEvent,
 )
-
-from agents.run_context import RunContextWrapper, TContext
-from agents.usage import Usage
-
-from openai.types.responses.response_function_tool_call import ResponseFunctionToolCall
-import logfire
-from languru.openai_agents.messages import MessageBuilder
 from openai.types.responses.response_audio_transcript_done_event import (
     ResponseAudioTranscriptDoneEvent,
 )
 from openai.types.responses.response_code_interpreter_call_code_delta_event import (
     ResponseCodeInterpreterCallCodeDeltaEvent,
 )
-from languru.openai_shared.tools import function_tool_to_responses_tool_param
 from openai.types.responses.response_code_interpreter_call_code_done_event import (
     ResponseCodeInterpreterCallCodeDoneEvent,
 )
@@ -39,6 +34,7 @@ from openai.types.responses.response_code_interpreter_call_interpreting_event im
     ResponseCodeInterpreterCallInterpretingEvent,
 )
 from openai.types.responses.response_completed_event import ResponseCompletedEvent
+from openai.types.responses.response_computer_tool_call import ResponseComputerToolCall
 from openai.types.responses.response_content_part_added_event import (
     ResponseContentPartAddedEvent,
 )
@@ -46,8 +42,6 @@ from openai.types.responses.response_content_part_done_event import (
     ResponseContentPartDoneEvent,
 )
 from openai.types.responses.response_created_event import ResponseCreatedEvent
-
-from openai.types.responses.response_computer_tool_call import ResponseComputerToolCall
 from openai.types.responses.response_error_event import ResponseErrorEvent
 from openai.types.responses.response_failed_event import ResponseFailedEvent
 from openai.types.responses.response_file_search_call_completed_event import (
@@ -65,13 +59,14 @@ from openai.types.responses.response_function_call_arguments_delta_event import 
 from openai.types.responses.response_function_call_arguments_done_event import (
     ResponseFunctionCallArgumentsDoneEvent,
 )
+from openai.types.responses.response_function_tool_call import ResponseFunctionToolCall
 from openai.types.responses.response_in_progress_event import ResponseInProgressEvent
 from openai.types.responses.response_includable import ResponseIncludable
 from openai.types.responses.response_incomplete_event import ResponseIncompleteEvent
 from openai.types.responses.response_input_param import (
-    ResponseInputParam,
     ComputerCallOutput,
     FunctionCallOutput,
+    ResponseInputParam,
 )
 from openai.types.responses.response_output_item_added_event import (
     ResponseOutputItemAddedEvent,
@@ -111,10 +106,12 @@ from openai.types.responses.response_web_search_call_in_progress_event import (
 from openai.types.responses.response_web_search_call_searching_event import (
     ResponseWebSearchCallSearchingEvent,
 )
-
 from openai.types.shared_params.metadata import Metadata
 from openai.types.shared_params.reasoning import Reasoning
 from openai.types.shared_params.responses_model import ResponsesModel
+
+from languru.openai_agents.messages import MessageBuilder
+from languru.openai_shared.tools import function_tool_to_responses_tool_param
 
 logger = logging.getLogger(__name__)
 
@@ -354,7 +351,9 @@ class OpenAIResponseStreamHandler(typing.Generic[TContext]):
         ),
         **kwargs,
     ) -> FunctionCallOutput:
-        with logfire.span(f"execute_function_call:{required_function_call.name}"):
+        with logfire.span(
+            f"execute_function_call:{required_function_call.name}"
+        ) as span:
             if (
                 self.__tools == NOT_GIVEN
                 or isinstance(self.__tools, NotGiven)
@@ -363,6 +362,8 @@ class OpenAIResponseStreamHandler(typing.Generic[TContext]):
                 logger.error(
                     f"No tools provided but got tool call: {required_function_call}"
                 )
+                span.set_attribute("success", "false")
+                span.set_attribute("error", "No tools provided")
                 return FunctionCallOutput(
                     call_id=required_function_call.call_id,
                     output="Not available currently",
@@ -379,6 +380,8 @@ class OpenAIResponseStreamHandler(typing.Generic[TContext]):
                     f"Function tool not found: {required_function_call.name}"
                     + f", available tools: {', '.join(t.name for t in self.__tools)}"
                 )
+                span.set_attribute("success", "false")
+                span.set_attribute("error", "Function tool not found")
                 return FunctionCallOutput(
                     call_id=required_function_call.call_id,
                     output="Not available currently",
@@ -387,11 +390,20 @@ class OpenAIResponseStreamHandler(typing.Generic[TContext]):
 
             try:
                 func_output = await func_tool.on_invoke_tool(
-                    RunContextWrapper(), required_function_call.arguments
+                    RunContextWrapper(self.__context, self.__accumulated_usage),
+                    required_function_call.arguments,
+                )
+                span.set_attribute("success", "true")
+                return FunctionCallOutput(
+                    call_id=required_function_call.call_id,
+                    output=func_output,
+                    type="function_call_output",
                 )
 
             except Exception as e:
                 logger.error(f"Error executing function tool: {e}")
+                span.set_attribute("success", "false")
+                span.set_attribute("error", "Error executing function tool")
                 return FunctionCallOutput(
                     call_id=required_function_call.call_id,
                     output="Error executing function",
