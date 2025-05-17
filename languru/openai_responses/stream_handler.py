@@ -187,6 +187,7 @@ class OpenAIResponseStreamHandler(typing.Generic[TContext]):
         self.__timeout = timeout
 
         self.__context = context
+        self.__final_response: typing.Optional[parsed_response.ParsedResponse] = None
 
         self.__accumulated_usage = Usage()
         self.__closed = False
@@ -240,7 +241,9 @@ class OpenAIResponseStreamHandler(typing.Generic[TContext]):
 
                 await stream.until_done()
 
-                final_response = await stream.get_final_response()
+                final_response = self.__final_response = (
+                    await stream.get_final_response()
+                )
 
                 self.__accumulated_usage.add(
                     Usage(
@@ -409,6 +412,9 @@ class OpenAIResponseStreamHandler(typing.Generic[TContext]):
                     output="Error executing function",
                     type="function_call_output",
                 )
+
+    def get_final_response(self) -> typing.Optional[parsed_response.ParsedResponse]:
+        return self.__final_response
 
     async def __on_event(self, event: ResponseStreamEvent) -> None:
         await self.on_event(event)
