@@ -6,6 +6,7 @@ import openai
 from openai._types import NOT_GIVEN, Body, Headers, NotGiven, Query
 from openai.types.chat import completion_create_params
 from openai.types.chat.chat_completion_audio_param import ChatCompletionAudioParam
+from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
 from openai.types.chat.chat_completion_message_param import ChatCompletionMessageParam
 from openai.types.chat.chat_completion_prediction_content_param import (
     ChatCompletionPredictionContentParam,
@@ -66,7 +67,9 @@ class OpenAIChatCompletionStreamHandler:
             typing.Optional[ChatCompletionStreamOptionsParam] | NotGiven
         ) = NOT_GIVEN,
         temperature: typing.Optional[float] | NotGiven = NOT_GIVEN,
-        tool_choice: ChatCompletionToolChoiceOptionParam | NotGiven = NOT_GIVEN,
+        tool_choice: (
+            typing.Optional[ChatCompletionToolChoiceOptionParam] | NotGiven
+        ) = NOT_GIVEN,
         tools: typing.Iterable[ChatCompletionToolParam] | NotGiven = NOT_GIVEN,
         top_logprobs: typing.Optional[int] | NotGiven = NOT_GIVEN,
         top_p: typing.Optional[float] | NotGiven = NOT_GIVEN,
@@ -116,3 +119,50 @@ class OpenAIChatCompletionStreamHandler:
         self.__extra_query = extra_query
         self.__extra_body = extra_body
         self.__timeout = timeout
+
+    async def run_until_done(self) -> None:
+        stream = await self.__openai_client.chat.completions.create(
+            messages=self.__messages,
+            model=self.__model,
+            stream=True,
+            audio=self.__audio,
+            frequency_penalty=self.__frequency_penalty,
+            function_call=self.__function_call,
+            functions=self.__functions,
+            logit_bias=self.__logit_bias,
+            logprobs=self.__logprobs,
+            max_completion_tokens=self.__max_completion_tokens,
+            max_tokens=self.__max_tokens,
+            metadata=self.__metadata,
+            modalities=self.__modalities,
+            n=self.__n,
+            parallel_tool_calls=self.__parallel_tool_calls,
+            prediction=self.__prediction,
+            presence_penalty=self.__presence_penalty,
+            reasoning_effort=self.__reasoning_effort,
+            response_format=self.__response_format,
+            seed=self.__seed,
+            service_tier=self.__service_tier,
+            stop=self.__stop,
+            store=self.__store,
+            stream_options=self.__stream_options,
+            temperature=self.__temperature,
+            tool_choice=self.__tool_choice,
+            tools=self.__tools,
+            top_logprobs=self.__top_logprobs,
+            top_p=self.__top_p,
+            user=self.__user,
+            web_search_options=self.__web_search_options,
+            extra_headers=self.__extra_headers,
+            extra_query=self.__extra_query,
+            extra_body=self.__extra_body,
+            timeout=self.__timeout,
+        )
+        async for chunk in stream:
+            await self.__on_event(chunk)
+
+    async def __on_event(self, event: ChatCompletionChunk) -> None:
+        await self.on_event(event)
+
+    async def on_event(self, event: ChatCompletionChunk) -> None:
+        pass
