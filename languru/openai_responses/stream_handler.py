@@ -201,13 +201,14 @@ class OpenAIResponseStreamHandler(typing.Generic[TContext]):
         required_action: bool = True
 
         current_limit = 0
+        input_ = self.__input
         previous_response_id = self.__previous_response_id
 
         while required_action and current_limit <= limit:
             current_limit += 1
 
             async with self.__openai_client.responses.stream(
-                input=self.__input,
+                input=input_,
                 model=self.__model,
                 tools=(
                     [
@@ -243,7 +244,7 @@ class OpenAIResponseStreamHandler(typing.Generic[TContext]):
 
                 final_response = self.__final_response = (
                     await stream.get_final_response()
-                )
+                ).model_copy(deep=True)
 
                 self.__accumulated_usage.add(
                     Usage(
@@ -266,7 +267,7 @@ class OpenAIResponseStreamHandler(typing.Generic[TContext]):
                     )
                 )
 
-                self.__previous_response_id = final_response.id
+                previous_response_id = self.__previous_response_id = final_response.id
 
                 _required_action_calls: typing.List[
                     parsed_response.ParsedResponseFunctionToolCall
@@ -289,21 +290,23 @@ class OpenAIResponseStreamHandler(typing.Generic[TContext]):
                     else:
                         logger.warning(f"Unhandled response.output.type: {output.type}")
 
+                # No required action calls, so we're done
                 if len(_required_action_calls) == 0:
                     logger.info("No required action calls")
                     required_action = False
 
+                # Required action calls, so we need to execute them
                 else:
                     logger.info(f"Required action calls: {len(_required_action_calls)}")
                     required_action = True
 
                     for required_action_call in _required_action_calls:
 
-                        self.__input.append(
+                        input_: ResponseInputParam = [
                             await self.execute_required_action_call(
                                 required_action_call
                             )
-                        )
+                        ]
 
         self.__closed = True
 
@@ -413,7 +416,9 @@ class OpenAIResponseStreamHandler(typing.Generic[TContext]):
                     type="function_call_output",
                 )
 
-    def get_final_response(self) -> typing.Optional[parsed_response.ParsedResponse]:
+    def retrieve_final_response(self) -> parsed_response.ParsedResponse:
+        if self.__final_response is None:
+            raise RuntimeError("No final response")
         return self.__final_response
 
     async def __on_event(self, event: ResponseStreamEvent) -> None:
