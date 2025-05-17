@@ -12,6 +12,10 @@ from openai.types.responses.response_audio_done_event import ResponseAudioDoneEv
 from openai.types.responses.response_audio_transcript_delta_event import (
     ResponseAudioTranscriptDeltaEvent,
 )
+
+from agents.run_context import RunContextWrapper, TContext
+from agents.usage import Usage
+
 from openai.types.responses.response_function_tool_call import ResponseFunctionToolCall
 import logfire
 from languru.openai_agents.messages import MessageBuilder
@@ -42,6 +46,8 @@ from openai.types.responses.response_content_part_done_event import (
     ResponseContentPartDoneEvent,
 )
 from openai.types.responses.response_created_event import ResponseCreatedEvent
+
+from openai.types.responses.response_computer_tool_call import ResponseComputerToolCall
 from openai.types.responses.response_error_event import ResponseErrorEvent
 from openai.types.responses.response_failed_event import ResponseFailedEvent
 from openai.types.responses.response_file_search_call_completed_event import (
@@ -62,7 +68,11 @@ from openai.types.responses.response_function_call_arguments_done_event import (
 from openai.types.responses.response_in_progress_event import ResponseInProgressEvent
 from openai.types.responses.response_includable import ResponseIncludable
 from openai.types.responses.response_incomplete_event import ResponseIncompleteEvent
-from openai.types.responses.response_input_param import ResponseInputParam
+from openai.types.responses.response_input_param import (
+    ResponseInputParam,
+    ComputerCallOutput,
+    FunctionCallOutput,
+)
 from openai.types.responses.response_output_item_added_event import (
     ResponseOutputItemAddedEvent,
 )
@@ -108,8 +118,10 @@ from openai.types.shared_params.responses_model import ResponsesModel
 
 logger = logging.getLogger(__name__)
 
+FAKE_ID: typing.Final = "__fake_id__"
 
-class OpenAIResponseStreamHandler:
+
+class OpenAIResponseStreamHandler(typing.Generic[TContext]):
     def __init__(
         self,
         openai_client: openai.AsyncOpenAI,
@@ -144,10 +156,11 @@ class OpenAIResponseStreamHandler:
         extra_query: Query | None = None,
         extra_body: Body | None = None,
         timeout: float | httpx.Timeout | None | NotGiven = NOT_GIVEN,
+        context: TContext | None = None,
         **kwargs,
     ):
         self.__openai_client = openai_client
-        self.__input = (
+        self.__input: ResponseInputParam = (
             [MessageBuilder.easy_input_message(content=input, role="user")]
             if isinstance(input, str)
             else copy.deepcopy(input)
@@ -176,6 +189,9 @@ class OpenAIResponseStreamHandler:
         self.__extra_body = extra_body
         self.__timeout = timeout
 
+        self.__context = context
+
+        self.__accumulated_usage = Usage()
         self.__closed = False
 
     async def run_until_done(self, *, limit: int = 10) -> None:
@@ -229,74 +245,107 @@ class OpenAIResponseStreamHandler:
 
                 final_response = await stream.get_final_response()
 
+                self.__accumulated_usage.add(
+                    Usage(
+                        requests=1,
+                        input_tokens=(
+                            final_response.usage.input_tokens
+                            if final_response.usage is not None
+                            else 0
+                        ),
+                        output_tokens=(
+                            final_response.usage.output_tokens
+                            if final_response.usage is not None
+                            else 0
+                        ),
+                        total_tokens=(
+                            final_response.usage.total_tokens
+                            if final_response.usage is not None
+                            else 0
+                        ),
+                    )
+                )
+
                 self.__previous_response_id = final_response.id
 
                 _required_action_calls: typing.List[
                     parsed_response.ParsedResponseFunctionToolCall
+                    | ResponseComputerToolCall
                 ] = []
 
                 for output in final_response.output:
-                    if output.type == "message":
+                    if output.type in (
+                        "message",
+                        "reasoning",
+                        "web_search_call",
+                        "file_search_call",
+                    ):
                         pass  # No required action
-                    elif output.type == "function_call":
-                        _required_action_calls.append(output)
-                    elif output.type == "file_search_call":
-                        pass  # Not implemented
-                    elif output.type == "web_search_call":
-                        pass  # Not implemented
-                    elif output.type == "computer_call":
-                        pass  # Not implemented
-                    elif output.type == "reasoning":
-                        pass  # No required action
+                    elif output.type in (
+                        "function_call",
+                        "computer_call",
+                    ):  # Need actions
+                        _required_action_calls.append(output)  # type: ignore
                     else:
                         logger.warning(f"Unhandled response.output.type: {output.type}")
 
                 if len(_required_action_calls) == 0:
-                    required_action = False
                     logger.info("No required action calls")
+                    required_action = False
 
                 else:
-                    required_action = True
                     logger.info(f"Required action calls: {len(_required_action_calls)}")
+                    required_action = True
 
                     for required_action_call in _required_action_calls:
 
                         self.__input.append(
-                            MessageBuilder.response_function_tool_call(
-                                arguments=required_action_call.arguments,
-                                call_id=required_action_call.call_id,
-                                name=required_action_call.name,
-                                type="function_call",
+                            await self.execute_required_action_call(
+                                required_action_call
                             )
-                        )
-                        action_output = await self.execute_action_call(
-                            required_action_call
                         )
 
         self.__closed = True
 
-    async def execute_action_call(
+    async def execute_required_action_call(
         self,
-        required_action_call: (
-            parsed_response.ParsedResponseFunctionToolCall
-            | parsed_response.ResponseFileSearchToolCall
-            | parsed_response.ResponseComputerToolCall
-        ),
+        required_action_call: typing.Union[
+            parsed_response.ParsedResponseFunctionToolCall, ResponseComputerToolCall
+        ],
         **kwargs,
-    ) -> typing.Text:
+    ) -> typing.Union[
+        ComputerCallOutput,
+        FunctionCallOutput,
+    ]:
         with logfire.span(f"execute_action_call:{required_action_call.call_id}"):
             if required_action_call.type == "function_call":
                 return await self.execute_function_call(required_action_call, **kwargs)
-            elif required_action_call.type == "file_search_call":
-                return "Not implemented"
             elif required_action_call.type == "computer_call":
-                return "Not implemented"
+                return await self.execute_computer_call(required_action_call, **kwargs)
             else:
-                logger.warning(
+                logger.error(
                     "Not implemented required action call type: "
                     + f"{required_action_call.type}"
                 )
-                return "Not implemented"
+                raise ValueError(
+                    "Not implemented required action call type: "
+                    + f"{required_action_call.type}"
+                )
+
+    async def execute_computer_call(
+        self,
+        required_computer_call: ResponseComputerToolCall,
+        **kwargs,
+    ) -> ComputerCallOutput:
+        return ComputerCallOutput(
+            call_id=required_computer_call.call_id,
+            output={
+                "type": "computer_screenshot",
+                "file_id": FAKE_ID,
+                "image_url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/501",  # noqa: E501
+            },
+            type="computer_call_output",
+        )
 
     async def execute_function_call(
         self,
@@ -304,8 +353,8 @@ class OpenAIResponseStreamHandler:
             parsed_response.ParsedResponseFunctionToolCall | ResponseFunctionToolCall
         ),
         **kwargs,
-    ) -> typing.Text:
-        with logfire.span(f"execute_action_call:{required_function_call.name}"):
+    ) -> FunctionCallOutput:
+        with logfire.span(f"execute_function_call:{required_function_call.name}"):
             if (
                 self.__tools == NOT_GIVEN
                 or isinstance(self.__tools, NotGiven)
@@ -314,7 +363,11 @@ class OpenAIResponseStreamHandler:
                 logger.error(
                     f"No tools provided but got tool call: {required_function_call}"
                 )
-                return "Not available currently"
+                return FunctionCallOutput(
+                    call_id=required_function_call.call_id,
+                    output="Not available currently",
+                    type="function_call_output",
+                )
 
             func_tool: agents.FunctionTool
             for tool in self.__tools:
@@ -323,16 +376,27 @@ class OpenAIResponseStreamHandler:
                     break
             else:
                 logger.error(
-                    f"Function tool not found: {required_function_call.name}, "
-                    + f"available tools: {', '.join([tool.name for tool in self.__tools])}"
+                    f"Function tool not found: {required_function_call.name}"
+                    + f", available tools: {', '.join(t.name for t in self.__tools)}"
                 )
-                return "Not available currently"
+                return FunctionCallOutput(
+                    call_id=required_function_call.call_id,
+                    output="Not available currently",
+                    type="function_call_output",
+                )
 
             try:
-                return func_tool.func()
+                func_output = await func_tool.on_invoke_tool(
+                    RunContextWrapper(), required_function_call.arguments
+                )
 
             except Exception as e:
-                pass
+                logger.error(f"Error executing function tool: {e}")
+                return FunctionCallOutput(
+                    call_id=required_function_call.call_id,
+                    output="Error executing function",
+                    type="function_call_output",
+                )
 
     async def __on_event(self, event: ResponseStreamEvent) -> None:
         await self.on_event(event)
