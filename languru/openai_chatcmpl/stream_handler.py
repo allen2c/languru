@@ -145,58 +145,63 @@ class OpenAIChatCompletionStreamHandler:
         self.__chatcmpls: typing.List[chat_completion.ChatCompletion] = []
 
     async def run_until_done(self) -> None:
-        stream = await self.__openai_client.chat.completions.create(
-            messages=self.__messages,
-            model=self.__model,
-            stream=True,
-            audio=self.__audio,
-            frequency_penalty=self.__frequency_penalty,
-            function_call=self.__function_call,  # type: ignore
-            functions=self.__functions,
-            logit_bias=self.__logit_bias,
-            logprobs=self.__logprobs,
-            max_completion_tokens=self.__max_completion_tokens,
-            max_tokens=self.__max_tokens,
-            metadata=self.__metadata,
-            modalities=self.__modalities,
-            n=self.__n,
-            parallel_tool_calls=self.__parallel_tool_calls,
-            prediction=self.__prediction,
-            presence_penalty=self.__presence_penalty,
-            reasoning_effort=self.__reasoning_effort,  # type: ignore
-            response_format=self.__response_format,
-            seed=self.__seed,
-            service_tier=self.__service_tier,  # type: ignore
-            stop=self.__stop,
-            store=self.__store,
-            stream_options={"include_usage": True},
-            temperature=self.__temperature,
-            tool_choice=self.__tool_choice,  # type: ignore
-            tools=(
-                [function_tool_to_chatcmpl_tool_param(tool) for tool in self.__tools]
-                if self.__tools and self.__tools != NOT_GIVEN
-                else NOT_GIVEN
-            ),
-            top_logprobs=self.__top_logprobs,
-            top_p=self.__top_p,
-            user=self.__user,
-            web_search_options=self.__web_search_options,
-            extra_headers=self.__extra_headers,
-            extra_query=self.__extra_query,
-            extra_body=self.__extra_body,
-            timeout=self.__timeout,
-        )
-        stream = typing.cast(
-            AsyncStream[chat_completion_chunk.ChatCompletionChunk], stream
-        )
+        required_tool_call = True
 
-        self.__chatcmpls.append(
-            chat_completion.ChatCompletion(
+        while required_tool_call:
+            stream = await self.__openai_client.chat.completions.create(
+                messages=self.__messages,
+                model=self.__model,
+                stream=True,
+                audio=self.__audio,
+                frequency_penalty=self.__frequency_penalty,
+                function_call=self.__function_call,  # type: ignore
+                functions=self.__functions,
+                logit_bias=self.__logit_bias,
+                logprobs=self.__logprobs,
+                max_completion_tokens=self.__max_completion_tokens,
+                max_tokens=self.__max_tokens,
+                metadata=self.__metadata,
+                modalities=self.__modalities,
+                n=self.__n,
+                parallel_tool_calls=self.__parallel_tool_calls,
+                prediction=self.__prediction,
+                presence_penalty=self.__presence_penalty,
+                reasoning_effort=self.__reasoning_effort,  # type: ignore
+                response_format=self.__response_format,
+                seed=self.__seed,
+                service_tier=self.__service_tier,  # type: ignore
+                stop=self.__stop,
+                store=self.__store,
+                stream_options={"include_usage": True},
+                temperature=self.__temperature,
+                tool_choice=self.__tool_choice,  # type: ignore
+                tools=(
+                    [
+                        function_tool_to_chatcmpl_tool_param(tool)
+                        for tool in self.__tools
+                    ]
+                    if self.__tools and self.__tools != NOT_GIVEN
+                    else NOT_GIVEN
+                ),
+                top_logprobs=self.__top_logprobs,
+                top_p=self.__top_p,
+                user=self.__user,
+                web_search_options=self.__web_search_options,
+                extra_headers=self.__extra_headers,
+                extra_query=self.__extra_query,
+                extra_body=self.__extra_body,
+                timeout=self.__timeout,
+            )
+            stream = typing.cast(
+                AsyncStream[chat_completion_chunk.ChatCompletionChunk], stream
+            )
+
+            _chatcmpls = chat_completion.ChatCompletion(
                 id=FAKE_ID,
                 choices=[
                     chat_completion.Choice(
                         finish_reason="stop",  # placeholder
-                        index=0,  # placeholder
+                        index=0,
                         logprobs=None,  # placeholder
                         message=ChatCompletionMessage(role="assistant"),
                     )
@@ -208,12 +213,16 @@ class OpenAIChatCompletionStreamHandler:
                 system_fingerprint=None,
                 usage=None,
             )
-        )
+            self.__chatcmpls.append(_chatcmpls)
 
-        async for chunk in stream:
-            self.__update_last_chatcmpl_from_chunk(chunk)
+            async for chunk in stream:
+                self.__update_chatcmpl_from_chunk(_chatcmpls, chunk)
 
-            await self.on_chatcmpl_chunk(chunk)
+                await self.on_chatcmpl_chunk(chunk)
+
+            required_tool_call = False
+            if _chatcmpls.choices[0].finish_reason in ["tool_calls", "function_call"]:
+                required_tool_call = True
 
         return None
 
@@ -227,12 +236,12 @@ class OpenAIChatCompletionStreamHandler:
     ) -> None:
         pass
 
-    def __update_last_chatcmpl_from_chunk(
-        self, chatcmpl_chunk: chat_completion_chunk.ChatCompletionChunk
+    def __update_chatcmpl_from_chunk(
+        self,
+        chatcmpl: chat_completion.ChatCompletion,
+        chatcmpl_chunk: chat_completion_chunk.ChatCompletionChunk,
     ) -> None:
         # Update the chatcmpl
-        chatcmpl = self.retrieve_last_chatcmpl()
-
         if chatcmpl.id == FAKE_ID:
             chatcmpl.id = chatcmpl_chunk.id
 
