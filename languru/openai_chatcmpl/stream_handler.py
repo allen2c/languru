@@ -277,6 +277,12 @@ class OpenAIChatCompletionStreamHandler(typing.Generic[TContext]):
             raise ValueError("No any chat completion available")
         return self.__chatcmpls[-1].model_copy(deep=True)
 
+    def get_messages_history(self) -> typing.List[ChatCompletionMessageParam]:
+        return copy.deepcopy(self.__messages_history)
+
+    def get_usage(self) -> Usage:
+        return self.__accumulated_usage
+
     async def execute_chatcmpl_tool_call(
         self, chatcmpl_tool_call: ChatCompletionMessageToolCall
     ) -> ChatCompletionToolMessageParam:
@@ -430,5 +436,59 @@ class OpenAIChatCompletionStreamHandler(typing.Generic[TContext]):
                     chatcmpl_choice_message_tool_call.function.arguments += (
                         chunk_tool_call.function.arguments
                     )
+
+        return None
+
+    def display_messages_history(self) -> None:
+        for message in self.__messages_history:
+            _role = message["role"]
+            _content = message.get("content", None)
+            tool_calls = message.get("tool_calls", None)
+            tool_call_id = message.get("tool_call_id", None)
+
+            if _content is not None:
+                if isinstance(_content, str):
+                    if tool_call_id is not None:
+                        print(f"\n{_role:10s}: [{tool_call_id[:10]}] {_content}")
+                    else:
+                        print(f"\n{_role:10s}: {_content}")
+                else:
+                    for _c in _content:
+                        if _c["type"] == "text":
+                            _value = _c["text"]
+                        elif _c["type"] == "image_url":
+                            _value = _c["image_url"]["url"]
+                        elif _c["type"] == "input_audio":
+                            _value = (
+                                (_c["input_audio"]["data"][:100] + "...")
+                                if len(_c["input_audio"]["data"]) > 100
+                                else _c["input_audio"]["data"]
+                            )
+                        elif _c["type"] == "file":
+                            _value = ""
+                            _file_id = _c["file"].get("file_id", None)
+                            _filename = _c["file"].get("filename", None)
+                            _file_data = _c["file"].get("file_data", None)
+                            if _file_id is not None:
+                                _value += f"({_file_id})"
+                            if _filename is not None:
+                                _value += f"({_filename})"
+                            if _file_data is not None:
+                                _value += f"({_file_data[:100] + '...'})"
+                        else:
+                            _value = str(_c)
+                        print(f"\n{_role:10s}: {_value}")
+
+            if tool_calls is not None:
+                for _tool_call in tool_calls:
+                    if _tool_call["type"] == "function":
+                        _function_name = _tool_call["function"]["name"]
+                        _function_arguments = _tool_call["function"]["arguments"]
+                        print(
+                            f"\n{_role:10s}: [{_tool_call['id'][:10]}] "
+                            + f"{_function_name}({_function_arguments})"
+                        )
+                    else:
+                        print(f"\n{_role:10s}: {_tool_call}")
 
         return None
