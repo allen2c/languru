@@ -231,10 +231,13 @@ class OpenAIChatCompletionStreamHandler(typing.Generic[TContext]):
             )
             self.__chatcmpls.append(_chatcmpl)
 
+            # Stream
             async for chunk in stream:
                 self.__update_chatcmpl_from_chunk(_chatcmpl, chunk)
 
                 await self.on_chatcmpl_chunk(chunk)
+
+            await self.on_chatcmpl_done(_chatcmpl)
 
             self.__messages_history.append(
                 _chatcmpl.choices[0].message.model_dump(
@@ -319,6 +322,9 @@ class OpenAIChatCompletionStreamHandler(typing.Generic[TContext]):
     async def on_chatcmpl_chunk(
         self, chatcmpl_chunk: chat_completion_chunk.ChatCompletionChunk
     ) -> None:
+        pass
+
+    async def on_chatcmpl_done(self, chatcmpl: chat_completion.ChatCompletion) -> None:
         pass
 
     def __update_chatcmpl_from_chunk(
