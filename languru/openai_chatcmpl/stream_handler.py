@@ -4,6 +4,7 @@ import typing
 
 import agents
 import httpx
+import logfire
 import openai
 import pydantic
 from agents.run_context import RunContextWrapper, TContext
@@ -286,44 +287,50 @@ class OpenAIChatCompletionStreamHandler(typing.Generic[TContext]):
     async def execute_chatcmpl_tool_call(
         self, chatcmpl_tool_call: ChatCompletionMessageToolCall
     ) -> ChatCompletionToolMessageParam:
-        tool_msg = ChatCompletionToolMessageParam(
-            tool_call_id=chatcmpl_tool_call.id,
-            role="tool",
-            content="",
-        )
-        tool: agents.FunctionTool | None = next(
-            (
-                tool
-                for tool in (
-                    self.__tools
-                    if self.__tools and not isinstance(self.__tools, NotGiven)
-                    else []
+        with logfire.span(
+            f"execute_chatcmpl_tool_call:{chatcmpl_tool_call.id}"
+        ) as span:
+            tool_msg = ChatCompletionToolMessageParam(
+                tool_call_id=chatcmpl_tool_call.id,
+                role="tool",
+                content="",
+            )
+            tool: agents.FunctionTool | None = next(
+                (
+                    tool
+                    for tool in (
+                        self.__tools
+                        if self.__tools and not isinstance(self.__tools, NotGiven)
+                        else []
+                    )
+                    if tool.name == chatcmpl_tool_call.function.name
+                ),
+                None,
+            )
+
+            if tool is None:
+                logger.error(f"Tool not found: {chatcmpl_tool_call.function.name}")
+                span.set_attributes({"success": False, "error": "tool_not_found"})
+                return (
+                    tool_msg.update({"content": "Current tool call is not supported"})
+                    or tool_msg
                 )
-                if tool.name == chatcmpl_tool_call.function.name
-            ),
-            None,
-        )
 
-        if tool is None:
-            logger.error(f"Tool not found: {chatcmpl_tool_call.function.name}")
-            return (
-                tool_msg.update({"content": "Current tool call is not supported"})
-                or tool_msg
-            )
+            try:
+                tool_output = await tool.on_invoke_tool(
+                    RunContextWrapper(self.__context, self.__accumulated_usage),
+                    chatcmpl_tool_call.function.arguments,
+                )
+                span.set_attributes({"success": True})
+                return tool_msg.update({"content": tool_output}) or tool_msg
 
-        try:
-            tool_output = await tool.on_invoke_tool(
-                RunContextWrapper(self.__context, self.__accumulated_usage),
-                chatcmpl_tool_call.function.arguments,
-            )
-            return tool_msg.update({"content": tool_output}) or tool_msg
-
-        except Exception as e:
-            logger.error(f"Error executing tool: {e}")
-            return (
-                tool_msg.update({"content": "Error, please try again later"})
-                or tool_msg
-            )
+            except Exception as e:
+                logger.error(f"Error executing tool: {e}")
+                span.set_attributes({"success": False, "error": "tool_execution_error"})
+                return (
+                    tool_msg.update({"content": "Error, please try again later"})
+                    or tool_msg
+                )
 
     async def on_chatcmpl_chunk(
         self, chatcmpl_chunk: chat_completion_chunk.ChatCompletionChunk
