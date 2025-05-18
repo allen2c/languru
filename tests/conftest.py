@@ -1,48 +1,62 @@
-import os
-import uuid
-from datetime import datetime
-from typing import Text
+import pathlib
+import tempfile
+import typing
 
+import openai
 import pytest
-import pytz
-from dotenv import load_dotenv
-
-load_dotenv()
-
-test_session_id = (
-    datetime.now(tz=pytz.UTC).strftime("%y%m%d%H%M%S")
-    + str(uuid.uuid4()).split("-")[0].upper()
-)
-test_env_vars = {
-    "logger_name": "languru_test",
-    "is_test": True,
-    "is_dev": False,
-    "is_prod": False,
-    "is_staging": False,
-    "is_ci": True,
-    "pytest": True,
-    "pytest_session": True,
-}
 
 
-def set_test_env_vars():
-    for k, v in test_env_vars.items():
-        os.environ[k] = str(v)
-        os.environ[k.upper()] = str(v)
+@pytest.fixture(scope="module")
+def deps_logging():
+    import logging
+
+    import logging_bullet_train
+
+    logging_bullet_train.set_logger(logging.getLogger("languru"))
+    return None
 
 
-def set_openai_backend_settings():
-    os.environ["OPENAI_BACKEND_URL"] = f"sqlite:////tmp/openai-{test_session_id}.db"
+@pytest.fixture(scope="module")
+def deps_logfire():
+    import logfire
+
+    import languru
+
+    logfire.configure(
+        service_name=languru.__name__ + "-tests",
+        service_version=languru.__version__,
+    )
+    return None
 
 
-@pytest.fixture(scope="session")
-def session_id_fixture() -> Text:
-    """Generate a unique session ID for test sessions."""
+@pytest.fixture(scope="module")
+def instrument_openai_agents(deps_logfire: typing.Literal[None]):
+    import logfire
 
-    return test_session_id
+    logfire.instrument_openai_agents()
+    return None
 
 
-set_test_env_vars()
-set_openai_backend_settings()
+@pytest.fixture(scope="module")
+def openai_client(deps_logfire: typing.Literal[None]):
+    import logfire
 
-__all__ = ["test_session_id"]
+    _client = openai.OpenAI()
+    logfire.instrument_openai(_client)
+    _client.models.list()
+    return _client
+
+
+@pytest.fixture(scope="module")
+def openai_async_client(deps_logfire: typing.Literal[None]):
+    import logfire
+
+    _client = openai.AsyncOpenAI()
+    logfire.instrument_openai(_client)
+    return _client
+
+
+@pytest.fixture(scope="module")
+def temp_dir():
+    with tempfile.TemporaryDirectory() as temp_dir:
+        yield pathlib.Path(temp_dir)
