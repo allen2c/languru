@@ -357,7 +357,6 @@ class OpenAIChatCompletionStreamHandler(typing.Generic[TContext]):
         # Update the choice
         assert len(chatcmpl.choices) > 0
         if len(chatcmpl_chunk.choices) == 0:
-            logger.warning(f"No choices in chunk: {chatcmpl_chunk}")
             return
 
         chatcmpl_choice = chatcmpl.choices[0]
@@ -409,10 +408,7 @@ class OpenAIChatCompletionStreamHandler(typing.Generic[TContext]):
                         {
                             "id": FAKE_ID,
                             "type": "function",
-                            "function": {
-                                "name": FAKE_MODEL,
-                                "arguments": "",
-                            },
+                            "function": {"name": "", "arguments": ""},
                         }
                     )
                 )
