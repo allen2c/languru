@@ -2,6 +2,7 @@ import typing
 
 import agents
 import pydantic
+from openai.types.chat.chat_completion_tool_param import ChatCompletionToolParam
 from openai.types.responses.function_tool_param import FunctionToolParam
 
 
@@ -31,6 +32,22 @@ def function_tool_to_responses_tool_param(
         strict=function_tool.strict_json_schema,
         type="function",
         description=function_tool.description,
+    )
+
+
+def function_tool_to_chatcmpl_tool_param(
+    function_tool: agents.FunctionTool,
+) -> ChatCompletionToolParam:
+    return ChatCompletionToolParam(
+        {
+            "function": {
+                "name": function_tool.name,
+                "description": function_tool.description,
+                "parameters": function_tool.params_json_schema,
+                "strict": function_tool.strict_json_schema,
+            },
+            "type": "function",
+        }
     )
 
 

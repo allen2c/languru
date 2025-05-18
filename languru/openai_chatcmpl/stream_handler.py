@@ -1,6 +1,7 @@
 import logging
 import typing
 
+import agents
 import httpx
 import openai
 from openai._types import NOT_GIVEN, Body, Headers, NotGiven, Query
@@ -17,10 +18,10 @@ from openai.types.chat.chat_completion_stream_options_param import (
 from openai.types.chat.chat_completion_tool_choice_option_param import (
     ChatCompletionToolChoiceOptionParam,
 )
-from openai.types.chat.chat_completion_tool_param import ChatCompletionToolParam
 from openai.types.shared.chat_model import ChatModel
 from openai.types.shared.reasoning_effort import ReasoningEffort
 from openai.types.shared_params.metadata import Metadata
+from openai_shared.tools import function_tool_to_chatcmpl_tool_param
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +71,7 @@ class OpenAIChatCompletionStreamHandler:
         tool_choice: (
             typing.Optional[ChatCompletionToolChoiceOptionParam] | NotGiven
         ) = NOT_GIVEN,
-        tools: typing.Iterable[ChatCompletionToolParam] | NotGiven = NOT_GIVEN,
+        tools: typing.List[agents.FunctionTool] | NotGiven = NOT_GIVEN,
         top_logprobs: typing.Optional[int] | NotGiven = NOT_GIVEN,
         top_p: typing.Optional[float] | NotGiven = NOT_GIVEN,
         user: str | NotGiven = NOT_GIVEN,
@@ -127,7 +128,7 @@ class OpenAIChatCompletionStreamHandler:
             stream=True,
             audio=self.__audio,
             frequency_penalty=self.__frequency_penalty,
-            function_call=self.__function_call,
+            function_call=self.__function_call,  # type: ignore
             functions=self.__functions,
             logit_bias=self.__logit_bias,
             logprobs=self.__logprobs,
@@ -139,16 +140,20 @@ class OpenAIChatCompletionStreamHandler:
             parallel_tool_calls=self.__parallel_tool_calls,
             prediction=self.__prediction,
             presence_penalty=self.__presence_penalty,
-            reasoning_effort=self.__reasoning_effort,
+            reasoning_effort=self.__reasoning_effort,  # type: ignore
             response_format=self.__response_format,
             seed=self.__seed,
-            service_tier=self.__service_tier,
+            service_tier=self.__service_tier,  # type: ignore
             stop=self.__stop,
             store=self.__store,
             stream_options=self.__stream_options,
             temperature=self.__temperature,
-            tool_choice=self.__tool_choice,
-            tools=self.__tools,
+            tool_choice=self.__tool_choice,  # type: ignore
+            tools=(
+                [function_tool_to_chatcmpl_tool_param(tool) for tool in self.__tools]
+                if self.__tools and self.__tools != NOT_GIVEN
+                else NOT_GIVEN
+            ),
             top_logprobs=self.__top_logprobs,
             top_p=self.__top_p,
             user=self.__user,
