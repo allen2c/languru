@@ -4,20 +4,21 @@ import typing
 import agents
 import httpx
 import openai
+import pydantic
 from openai._streaming import AsyncStream
 from openai._types import NOT_GIVEN, Body, Headers, NotGiven, Query
-from openai.types.chat import completion_create_params
-from openai.types.chat.chat_completion import (
-    ChatCompletion,
-    ChatCompletionMessage,
+from openai.types.chat import (
+    chat_completion,
+    chat_completion_chunk,
+    completion_create_params,
 )
-from openai.types.chat.chat_completion import Choice as ChatCompletionChoice
+from openai.types.chat.chat_completion_audio import ChatCompletionAudio
 from openai.types.chat.chat_completion_audio_param import ChatCompletionAudioParam
-from openai.types.chat.chat_completion_chunk import (
-    ChatCompletionChunk,
-)
-from openai.types.chat.chat_completion_chunk import Choice as ChatCompletionChunkChoice
+from openai.types.chat.chat_completion_message import ChatCompletionMessage
 from openai.types.chat.chat_completion_message_param import ChatCompletionMessageParam
+from openai.types.chat.chat_completion_message_tool_call import (
+    ChatCompletionMessageToolCall,
+)
 from openai.types.chat.chat_completion_prediction_content_param import (
     ChatCompletionPredictionContentParam,
 )
@@ -36,6 +37,14 @@ from languru.openai_shared.tools import function_tool_to_chatcmpl_tool_param
 logger = logging.getLogger(__name__)
 
 FAKE_ID = "__fake_id__"
+FAKE_MODEL = "__fake_model__"
+
+
+class DeltaAudio(pydantic.BaseModel):
+    id: typing.Optional[str] = None
+    transcript: typing.Optional[str] = None
+    data: typing.Optional[str] = None
+    expires_at: typing.Optional[int] = None
 
 
 class OpenAIChatCompletionStreamHandler:
@@ -133,7 +142,7 @@ class OpenAIChatCompletionStreamHandler:
         self.__extra_body = extra_body
         self.__timeout = timeout
 
-        self.__chatcmpl: typing.Optional[ChatCompletion] = None
+        self.__chatcmpls: typing.List[chat_completion.ChatCompletion] = []
 
     async def run_until_done(self) -> None:
         stream = await self.__openai_client.chat.completions.create(
@@ -177,51 +186,153 @@ class OpenAIChatCompletionStreamHandler:
             extra_body=self.__extra_body,
             timeout=self.__timeout,
         )
-        stream = typing.cast(AsyncStream[ChatCompletionChunk], stream)
-
-        chatcmpl = ChatCompletion(
-            id=FAKE_ID,
-            choices=[],
-            created=0,
-            model=self.__model,
-            object="chat.completion",
-            service_tier=None,
-            system_fingerprint=None,
-            usage=None,
+        stream = typing.cast(
+            AsyncStream[chat_completion_chunk.ChatCompletionChunk], stream
         )
-        chatcmpl_choice = ChatCompletionChoice(
-            finish_reason="stop",  # placeholder
-            index=0,  # placeholder
-            logprobs=None,  # placeholder
-            message=ChatCompletionMessage(role="assistant"),
+
+        self.__chatcmpls.append(
+            chat_completion.ChatCompletion(
+                id=FAKE_ID,
+                choices=[
+                    chat_completion.Choice(
+                        finish_reason="stop",  # placeholder
+                        index=0,  # placeholder
+                        logprobs=None,  # placeholder
+                        message=ChatCompletionMessage(role="assistant"),
+                    )
+                ],
+                created=0,
+                model=FAKE_MODEL,
+                object="chat.completion",
+                service_tier=None,
+                system_fingerprint=None,
+                usage=None,
+            )
         )
 
         async for chunk in stream:
+            self.__update_last_chatcmpl_from_chunk(chunk)
+
             await self.on_chatcmpl_chunk(chunk)
 
-            if not chunk.choices:
-                logger.error(f"No choices in chunk: {chunk}")
-                return
+        return None
 
-            _choice = chunk.choices[0]
+    def retrieve_last_chatcmpl(self) -> chat_completion.ChatCompletion:
+        if not self.__chatcmpls:
+            raise ValueError("No any chat completion available")
+        return self.__chatcmpls[-1].model_copy(deep=True)
 
-        # TODO: PLACEHOLDER
-        # TODO: PLACEHOLDER
-        # TODO: PLACEHOLDER
-        # TODO: PLACEHOLDER
-        # TODO: PLACEHOLDER
-        # TODO: PLACEHOLDER
-        # TODO: PLACEHOLDER
-        # Set the final chatcmpl
-        self.__chatcmpl = chatcmpl
-
-    def retrieve_chatcmpl(self) -> ChatCompletion:
-        if self.__chatcmpl is None:
-            raise ValueError("Chat completion not available")
-        return self.__chatcmpl
-
-    def get_chatcmpl(self) -> typing.Optional[ChatCompletion]:
-        return self.__chatcmpl.model_copy(deep=True) if self.__chatcmpl else None
-
-    async def on_chatcmpl_chunk(self, chatcmpl_chunk: ChatCompletionChunk) -> None:
+    async def on_chatcmpl_chunk(
+        self, chatcmpl_chunk: chat_completion_chunk.ChatCompletionChunk
+    ) -> None:
         pass
+
+    def __update_last_chatcmpl_from_chunk(
+        self, chatcmpl_chunk: chat_completion_chunk.ChatCompletionChunk
+    ) -> None:
+        # Update the chatcmpl
+        chatcmpl = self.retrieve_last_chatcmpl()
+
+        if chatcmpl.id == FAKE_ID:
+            chatcmpl.id = chatcmpl_chunk.id
+
+        if chatcmpl.created == 0:
+            chatcmpl.created = chatcmpl_chunk.created
+
+        if chatcmpl.model == FAKE_MODEL:
+            chatcmpl.model = chatcmpl_chunk.model
+
+        if chatcmpl.service_tier is None and chatcmpl_chunk.service_tier is not None:
+            chatcmpl.service_tier = chatcmpl_chunk.service_tier
+
+        if (
+            chatcmpl.system_fingerprint is None
+            and chatcmpl_chunk.system_fingerprint is not None
+        ):
+            chatcmpl.system_fingerprint = chatcmpl_chunk.system_fingerprint
+
+        if chatcmpl.usage is None and chatcmpl_chunk.usage is not None:
+            chatcmpl.usage = chatcmpl_chunk.usage
+
+        # Update the choice
+        assert len(chatcmpl.choices) > 0
+        if len(chatcmpl_chunk.choices) == 0:
+            logger.warning(f"No choices in chunk: {chatcmpl_chunk}")
+            return
+
+        chatcmpl_choice = chatcmpl.choices[0]
+        chunk_choice = chatcmpl_chunk.choices[0]
+
+        if chunk_choice.finish_reason is not None:
+            chatcmpl_choice.finish_reason = chunk_choice.finish_reason
+
+        if chunk_choice.logprobs is not None:
+            chatcmpl_choice.logprobs = (
+                chat_completion.ChoiceLogprobs.model_validate_json(
+                    chunk_choice.logprobs.model_dump_json()
+                )
+            )
+
+        if chunk_choice.delta.content is not None:  # message delta
+            if chatcmpl_choice.message.content is None:
+                chatcmpl_choice.message.content = ""
+            chatcmpl_choice.message.content += chunk_choice.delta.content
+
+        if delta_audio_data := getattr(chunk_choice.delta, "audio", None):  # audio
+            delta_audio = DeltaAudio.model_validate(delta_audio_data)
+            if chatcmpl_choice.message.audio is None:
+                chatcmpl_choice.message.audio = ChatCompletionAudio(
+                    id=FAKE_ID, data="", expires_at=0, transcript=""
+                )
+            if (
+                delta_audio.id is not None
+                and chatcmpl_choice.message.audio.id == FAKE_ID
+            ):
+                chatcmpl_choice.message.audio.id = delta_audio.id
+            if delta_audio.transcript is not None:
+                chatcmpl_choice.message.audio.transcript += delta_audio.transcript
+            if delta_audio.data is not None:
+                chatcmpl_choice.message.audio.data += delta_audio.data
+            if (
+                delta_audio.expires_at is not None
+                and chatcmpl_choice.message.audio.expires_at == 0
+            ):
+                chatcmpl_choice.message.audio.expires_at = delta_audio.expires_at
+
+        if chunk_choice.delta.tool_calls is not None:
+            chunk_tool_call = chunk_choice.delta.tool_calls[0]
+            if chatcmpl_choice.message.tool_calls is None:
+                chatcmpl_choice.message.tool_calls = []
+            if (chunk_tool_call.index + 1) > len(chatcmpl_choice.message.tool_calls):
+                chatcmpl_choice.message.tool_calls.append(
+                    ChatCompletionMessageToolCall.model_validate(
+                        {
+                            "id": FAKE_ID,
+                            "type": "function",
+                            "function": {
+                                "name": FAKE_MODEL,
+                                "arguments": "",
+                            },
+                        }
+                    )
+                )
+
+            chatcmpl_choice_message_tool_call = chatcmpl_choice.message.tool_calls[
+                chunk_tool_call.index
+            ]
+            if (
+                chunk_tool_call.id is not None
+                and chatcmpl_choice_message_tool_call.id == FAKE_ID
+            ):
+                chatcmpl_choice_message_tool_call.id = chunk_tool_call.id
+            if chunk_tool_call.function is not None:
+                if chunk_tool_call.function.name is not None:
+                    chatcmpl_choice_message_tool_call.function.name += (
+                        chunk_tool_call.function.name
+                    )
+                if chunk_tool_call.function.arguments is not None:
+                    chatcmpl_choice_message_tool_call.function.arguments += (
+                        chunk_tool_call.function.arguments
+                    )
+
+        return None
