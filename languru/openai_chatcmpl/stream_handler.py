@@ -1,3 +1,4 @@
+import copy
 import logging
 import typing
 
@@ -5,6 +6,8 @@ import agents
 import httpx
 import openai
 import pydantic
+from agents.run_context import RunContextWrapper, TContext
+from agents.usage import Usage
 from openai._streaming import AsyncStream
 from openai._types import NOT_GIVEN, Body, Headers, NotGiven, Query
 from openai.types.chat import (
@@ -28,6 +31,9 @@ from openai.types.chat.chat_completion_stream_options_param import (
 from openai.types.chat.chat_completion_tool_choice_option_param import (
     ChatCompletionToolChoiceOptionParam,
 )
+from openai.types.chat.chat_completion_tool_message_param import (
+    ChatCompletionToolMessageParam,
+)
 from openai.types.shared.chat_model import ChatModel
 from openai.types.shared.reasoning_effort import ReasoningEffort
 from openai.types.shared_params.metadata import Metadata
@@ -47,7 +53,7 @@ class DeltaAudio(pydantic.BaseModel):
     expires_at: typing.Optional[int] = None
 
 
-class OpenAIChatCompletionStreamHandler:
+class OpenAIChatCompletionStreamHandler(typing.Generic[TContext]):
     def __init__(
         self,
         openai_client: openai.AsyncOpenAI,
@@ -103,6 +109,7 @@ class OpenAIChatCompletionStreamHandler:
         extra_query: Query | None = None,
         extra_body: Body | None = None,
         timeout: float | httpx.Timeout | None | NotGiven = NOT_GIVEN,
+        context: TContext | None = None,
         **kwargs,
     ):
         self.__openai_client = openai_client
@@ -143,13 +150,22 @@ class OpenAIChatCompletionStreamHandler:
         self.__timeout = timeout
 
         self.__chatcmpls: typing.List[chat_completion.ChatCompletion] = []
+        self.__messages_history: typing.List[ChatCompletionMessageParam] = [
+            copy.deepcopy(m) for m in messages
+        ]
+        self.__context = context
+        self.__accumulated_usage = Usage()
 
-    async def run_until_done(self) -> None:
+    async def run_until_done(self, *, limit: int = 10) -> None:
+        if limit <= 0 or limit > 25:
+            raise ValueError("Limit must be between 1 and 25")
+
+        current_limit = 0
         required_tool_call = True
 
-        while required_tool_call:
+        while required_tool_call and current_limit <= limit:
             stream = await self.__openai_client.chat.completions.create(
-                messages=self.__messages,
+                messages=self.__messages_history,
                 model=self.__model,
                 stream=True,
                 audio=self.__audio,
@@ -196,7 +212,7 @@ class OpenAIChatCompletionStreamHandler:
                 AsyncStream[chat_completion_chunk.ChatCompletionChunk], stream
             )
 
-            _chatcmpls = chat_completion.ChatCompletion(
+            _chatcmpl = chat_completion.ChatCompletion(
                 id=FAKE_ID,
                 choices=[
                     chat_completion.Choice(
@@ -213,16 +229,43 @@ class OpenAIChatCompletionStreamHandler:
                 system_fingerprint=None,
                 usage=None,
             )
-            self.__chatcmpls.append(_chatcmpls)
+            self.__chatcmpls.append(_chatcmpl)
 
             async for chunk in stream:
-                self.__update_chatcmpl_from_chunk(_chatcmpls, chunk)
+                self.__update_chatcmpl_from_chunk(_chatcmpl, chunk)
 
                 await self.on_chatcmpl_chunk(chunk)
 
-            required_tool_call = False
-            if _chatcmpls.choices[0].finish_reason in ["tool_calls", "function_call"]:
+            self.__messages_history.append(
+                _chatcmpl.choices[0].message.model_dump(
+                    exclude_none=True,
+                )  # type: ignore
+            )
+
+            self.__accumulated_usage.add(
+                Usage(
+                    requests=1,
+                    input_tokens=(
+                        _chatcmpl.usage.prompt_tokens if _chatcmpl.usage else 0
+                    ),
+                    output_tokens=(
+                        _chatcmpl.usage.completion_tokens if _chatcmpl.usage else 0
+                    ),
+                    total_tokens=_chatcmpl.usage.total_tokens if _chatcmpl.usage else 0,
+                )
+            )
+
+            required_tool_call_finish_reasons = ("tool_calls", "function_call")
+            if _chatcmpl.choices[0].finish_reason in required_tool_call_finish_reasons:
                 required_tool_call = True
+
+                # Handle tool call
+                for _tool_call in _chatcmpl.choices[0].message.tool_calls or []:
+                    tool_call_output = await self.execute_chatcmpl_tool_call(_tool_call)
+                    self.__messages_history.append(tool_call_output)
+
+            else:
+                required_tool_call = False
 
         return None
 
@@ -230,6 +273,48 @@ class OpenAIChatCompletionStreamHandler:
         if not self.__chatcmpls:
             raise ValueError("No any chat completion available")
         return self.__chatcmpls[-1].model_copy(deep=True)
+
+    async def execute_chatcmpl_tool_call(
+        self, chatcmpl_tool_call: ChatCompletionMessageToolCall
+    ) -> ChatCompletionToolMessageParam:
+        tool_msg = ChatCompletionToolMessageParam(
+            tool_call_id=chatcmpl_tool_call.id,
+            role="tool",
+            content="",
+        )
+        tool: agents.FunctionTool | None = next(
+            (
+                tool
+                for tool in (
+                    self.__tools
+                    if self.__tools and not isinstance(self.__tools, NotGiven)
+                    else []
+                )
+                if tool.name == chatcmpl_tool_call.function.name
+            ),
+            None,
+        )
+
+        if tool is None:
+            logger.error(f"Tool not found: {chatcmpl_tool_call.function.name}")
+            return (
+                tool_msg.update({"content": "Current tool call is not supported"})
+                or tool_msg
+            )
+
+        try:
+            tool_output = await tool.on_invoke_tool(
+                RunContextWrapper(self.__context, self.__accumulated_usage),
+                chatcmpl_tool_call.function.arguments,
+            )
+            return tool_msg.update({"content": tool_output}) or tool_msg
+
+        except Exception as e:
+            logger.error(f"Error executing tool: {e}")
+            return (
+                tool_msg.update({"content": "Error, please try again later"})
+                or tool_msg
+            )
 
     async def on_chatcmpl_chunk(
         self, chatcmpl_chunk: chat_completion_chunk.ChatCompletionChunk
