@@ -4,10 +4,19 @@ import typing
 import agents
 import httpx
 import openai
+from openai._streaming import AsyncStream
 from openai._types import NOT_GIVEN, Body, Headers, NotGiven, Query
 from openai.types.chat import completion_create_params
+from openai.types.chat.chat_completion import (
+    ChatCompletion,
+    ChatCompletionMessage,
+)
+from openai.types.chat.chat_completion import Choice as ChatCompletionChoice
 from openai.types.chat.chat_completion_audio_param import ChatCompletionAudioParam
-from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
+from openai.types.chat.chat_completion_chunk import (
+    ChatCompletionChunk,
+)
+from openai.types.chat.chat_completion_chunk import Choice as ChatCompletionChunkChoice
 from openai.types.chat.chat_completion_message_param import ChatCompletionMessageParam
 from openai.types.chat.chat_completion_prediction_content_param import (
     ChatCompletionPredictionContentParam,
@@ -21,9 +30,12 @@ from openai.types.chat.chat_completion_tool_choice_option_param import (
 from openai.types.shared.chat_model import ChatModel
 from openai.types.shared.reasoning_effort import ReasoningEffort
 from openai.types.shared_params.metadata import Metadata
-from openai_shared.tools import function_tool_to_chatcmpl_tool_param
+
+from languru.openai_shared.tools import function_tool_to_chatcmpl_tool_param
 
 logger = logging.getLogger(__name__)
+
+FAKE_ID = "__fake_id__"
 
 
 class OpenAIChatCompletionStreamHandler:
@@ -121,6 +133,8 @@ class OpenAIChatCompletionStreamHandler:
         self.__extra_body = extra_body
         self.__timeout = timeout
 
+        self.__chatcmpl: typing.Optional[ChatCompletion] = None
+
     async def run_until_done(self) -> None:
         stream = await self.__openai_client.chat.completions.create(
             messages=self.__messages,
@@ -146,7 +160,7 @@ class OpenAIChatCompletionStreamHandler:
             service_tier=self.__service_tier,  # type: ignore
             stop=self.__stop,
             store=self.__store,
-            stream_options=self.__stream_options,
+            stream_options={"include_usage": True},
             temperature=self.__temperature,
             tool_choice=self.__tool_choice,  # type: ignore
             tools=(
@@ -163,11 +177,51 @@ class OpenAIChatCompletionStreamHandler:
             extra_body=self.__extra_body,
             timeout=self.__timeout,
         )
+        stream = typing.cast(AsyncStream[ChatCompletionChunk], stream)
+
+        chatcmpl = ChatCompletion(
+            id=FAKE_ID,
+            choices=[],
+            created=0,
+            model=self.__model,
+            object="chat.completion",
+            service_tier=None,
+            system_fingerprint=None,
+            usage=None,
+        )
+        chatcmpl_choice = ChatCompletionChoice(
+            finish_reason="stop",  # placeholder
+            index=0,  # placeholder
+            logprobs=None,  # placeholder
+            message=ChatCompletionMessage(role="assistant"),
+        )
+
         async for chunk in stream:
-            await self.__on_event(chunk)
+            await self.on_chatcmpl_chunk(chunk)
 
-    async def __on_event(self, event: ChatCompletionChunk) -> None:
-        await self.on_event(event)
+            if not chunk.choices:
+                logger.error(f"No choices in chunk: {chunk}")
+                return
 
-    async def on_event(self, event: ChatCompletionChunk) -> None:
+            _choice = chunk.choices[0]
+
+        # TODO: PLACEHOLDER
+        # TODO: PLACEHOLDER
+        # TODO: PLACEHOLDER
+        # TODO: PLACEHOLDER
+        # TODO: PLACEHOLDER
+        # TODO: PLACEHOLDER
+        # TODO: PLACEHOLDER
+        # Set the final chatcmpl
+        self.__chatcmpl = chatcmpl
+
+    def retrieve_chatcmpl(self) -> ChatCompletion:
+        if self.__chatcmpl is None:
+            raise ValueError("Chat completion not available")
+        return self.__chatcmpl
+
+    def get_chatcmpl(self) -> typing.Optional[ChatCompletion]:
+        return self.__chatcmpl.model_copy(deep=True) if self.__chatcmpl else None
+
+    async def on_chatcmpl_chunk(self, chatcmpl_chunk: ChatCompletionChunk) -> None:
         pass
