@@ -1,4 +1,7 @@
+import base64
+import pathlib
 import typing
+import wave
 
 import agents
 import openai
@@ -47,3 +50,65 @@ async def test_openai_chatcmpl_stream_handler_simple(
         messages_history = stream_handler.get_messages_history()
 
         stream_handler.display_messages_history()
+
+
+@pytest.mark.asyncio
+async def test_openai_chatcmpl_stream_handler_audio(
+    openai_async_client: openai.AsyncOpenAI,
+):
+    data_dir = pathlib.Path("data")
+    data_dir.resolve()
+    data_dir.mkdir(parents=True, exist_ok=True)
+    user_audio_filepath = data_dir.joinpath("user_says.wav")
+    bot_audio_filepath = data_dir.joinpath("bot_says.wav")
+
+    if user_audio_filepath.is_file() is False:
+        async with openai_async_client.audio.speech.with_streaming_response.create(
+            input="Who are you?",
+            model="gpt-4o-mini-tts",
+            voice="alloy",
+            response_format="wav",
+            instructions="Speak in a cheerful and positive tone.",
+        ) as response:
+            await response.stream_to_file(user_audio_filepath)
+
+    stream_handler = OpenAIChatCompletionStreamHandler(
+        openai_async_client,
+        model="gpt-4o-mini-audio-preview",
+        modalities=["text", "audio"],  # want both text & speech out
+        audio={"voice": "alloy", "format": "pcm16"},
+        messages=[
+            {
+                "role": "system",
+                "content": "You are a concise assistant, speak very very fast (speed x2)",  # noqa: E501
+            },
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "input_audio",
+                        "input_audio": {
+                            "data": base64.b64encode(
+                                user_audio_filepath.read_bytes()
+                            ).decode("ascii"),
+                            "format": "wav",
+                        },
+                    },
+                ],
+            },
+        ],
+        stream_options={"include_usage": False},
+    )
+
+    await stream_handler.run_until_done()
+
+    chatcmpl = stream_handler.retrieve_last_chatcmpl()
+
+    assert chatcmpl.choices[0].message.audio is not None
+    audio_b64 = chatcmpl.choices[0].message.audio.data
+    audio_bytes = base64.b64decode(audio_b64)
+    with wave.open(str(bot_audio_filepath), "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(24_000)
+        wf.writeframes(audio_bytes)

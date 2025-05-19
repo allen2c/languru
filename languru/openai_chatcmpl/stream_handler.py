@@ -137,7 +137,11 @@ class OpenAIChatCompletionStreamHandler(typing.Generic[TContext]):
         self.__service_tier = service_tier
         self.__stop = stop
         self.__store = store
-        self.__stream_options = stream_options
+        self.__stream_options = (
+            {"include_usage": True}
+            if stream_options is NOT_GIVEN or stream_options is None
+            else stream_options
+        )
         self.__temperature = temperature
         self.__tool_choice = tool_choice
         self.__tools = tools
@@ -189,7 +193,7 @@ class OpenAIChatCompletionStreamHandler(typing.Generic[TContext]):
                 service_tier=self.__service_tier,  # type: ignore
                 stop=self.__stop,
                 store=self.__store,
-                stream_options={"include_usage": True},
+                stream_options=self.__stream_options,  # type: ignore
                 temperature=self.__temperature,
                 tool_choice=self.__tool_choice,  # type: ignore
                 tools=(
