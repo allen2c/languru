@@ -38,6 +38,7 @@ from openai.types.chat.chat_completion_tool_message_param import (
 from openai.types.shared.chat_model import ChatModel
 from openai.types.shared.reasoning_effort import ReasoningEffort
 from openai.types.shared_params.metadata import Metadata
+from str_or_none import str_or_none
 
 from languru.openai_shared.tools import function_tool_to_chatcmpl_tool_param
 
@@ -263,17 +264,16 @@ class OpenAIChatCompletionStreamHandler(typing.Generic[TContext]):
                 )
             )
 
-            required_tool_call_finish_reasons = ("tool_calls", "function_call")
-            if _chatcmpl.choices[0].finish_reason in required_tool_call_finish_reasons:
-                required_tool_call = True
-
+            required_tool_call = (
+                _chatcmpl.choices[0].message.tool_calls is not None
+                and len(_chatcmpl.choices[0].message.tool_calls) > 0
+            )
+            logger.debug(f"required_tool_call: {required_tool_call}")
+            if required_tool_call:
                 # Handle tool call
                 for _tool_call in _chatcmpl.choices[0].message.tool_calls or []:
                     tool_call_output = await self.execute_chatcmpl_tool_call(_tool_call)
                     self.__messages_history.append(tool_call_output)
-
-            else:
-                required_tool_call = False
 
         return None
 
@@ -489,6 +489,19 @@ class OpenAIChatCompletionStreamHandler(typing.Generic[TContext]):
                         else:
                             _value = str(_c)
                         print(f"\n{_role:10s}: {_value}")
+
+            if message.get("audio", None):
+                _audio_id = str_or_none(message["audio"].get("id", None))  # type: ignore  # noqa: E501
+                _audio_data = str_or_none(message["audio"].get("data", None))  # type: ignore  # noqa: E501
+                _audio_transcript = str_or_none(
+                    message["audio"].get("transcript", None)  # type: ignore
+                )
+                print(
+                    f"\n{_role:10s}: [{str(_audio_id)[:10]}] "
+                    + f"{_audio_transcript if _audio_transcript else ''}"
+                )
+                if _audio_data is not None:
+                    print(f"\n{_role:10s}: {_audio_data[:100] + '...'}")
 
             if tool_calls is not None:
                 for _tool_call in tool_calls:
