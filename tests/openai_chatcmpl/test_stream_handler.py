@@ -1,7 +1,6 @@
 import base64
 import pathlib
 import typing
-import wave
 
 import agents
 import openai
@@ -9,6 +8,7 @@ import pytest
 
 from languru.examples.tools import GetTimeNow
 from languru.openai_chatcmpl.stream_handler import OpenAIChatCompletionStreamHandler
+from languru.openai_shared.audio import save_pcm_as_wav
 from languru.openai_shared.tools import base_model_to_function_tool
 
 MODEL = "gpt-4.1-nano"
@@ -107,8 +107,4 @@ async def test_openai_chatcmpl_stream_handler_audio(
     assert chatcmpl.choices[0].message.audio is not None
     audio_b64 = chatcmpl.choices[0].message.audio.data
     audio_bytes = base64.b64decode(audio_b64)
-    with wave.open(str(bot_audio_filepath), "wb") as wf:
-        wf.setnchannels(1)
-        wf.setsampwidth(2)
-        wf.setframerate(24_000)
-        wf.writeframes(audio_bytes)
+    save_pcm_as_wav(audio_bytes, bot_audio_filepath)
