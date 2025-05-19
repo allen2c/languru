@@ -6,28 +6,20 @@ import agents
 import httpx
 import logfire
 import openai
-import pydantic
 from agents.run_context import RunContextWrapper, TContext
 from agents.usage import Usage
-from openai._streaming import AsyncStream
 from openai._types import NOT_GIVEN, Body, Headers, NotGiven, Query
 from openai.types.chat import (
     chat_completion,
-    chat_completion_chunk,
     completion_create_params,
 )
-from openai.types.chat.chat_completion_audio import ChatCompletionAudio
 from openai.types.chat.chat_completion_audio_param import ChatCompletionAudioParam
-from openai.types.chat.chat_completion_message import ChatCompletionMessage
 from openai.types.chat.chat_completion_message_param import ChatCompletionMessageParam
 from openai.types.chat.chat_completion_message_tool_call import (
     ChatCompletionMessageToolCall,
 )
 from openai.types.chat.chat_completion_prediction_content_param import (
     ChatCompletionPredictionContentParam,
-)
-from openai.types.chat.chat_completion_stream_options_param import (
-    ChatCompletionStreamOptionsParam,
 )
 from openai.types.chat.chat_completion_tool_choice_option_param import (
     ChatCompletionToolChoiceOptionParam,
@@ -43,25 +35,15 @@ from languru.openai_shared.tools import function_tool_to_chatcmpl_tool_param
 
 logger = logging.getLogger(__name__)
 
-FAKE_ID = "__fake_id__"
-FAKE_MODEL = "__fake_model__"
 
-
-class DeltaAudio(pydantic.BaseModel):
-    id: typing.Optional[str] = None
-    transcript: typing.Optional[str] = None
-    data: typing.Optional[str] = None
-    expires_at: typing.Optional[int] = None
-
-
-class OpenAIChatCompletionStreamHandler(typing.Generic[TContext]):
+class OpenAIChatCompletionHandler(typing.Generic[TContext]):
     def __init__(
         self,
         openai_client: openai.AsyncOpenAI,
         *,
         messages: typing.Iterable[ChatCompletionMessageParam],
         model: typing.Union[str, ChatModel],
-        stream: typing.Literal[True] = True,
+        stream: typing.Literal[False] = False,
         audio: typing.Optional[ChatCompletionAudioParam] | NotGiven = NOT_GIVEN,
         frequency_penalty: typing.Optional[float] | NotGiven = NOT_GIVEN,
         function_call: completion_create_params.FunctionCall | NotGiven = NOT_GIVEN,
@@ -92,9 +74,6 @@ class OpenAIChatCompletionStreamHandler(typing.Generic[TContext]):
             typing.Union[typing.Optional[str], typing.List[str], None] | NotGiven
         ) = NOT_GIVEN,
         store: typing.Optional[bool] | NotGiven = NOT_GIVEN,
-        stream_options: (
-            typing.Optional[ChatCompletionStreamOptionsParam] | NotGiven
-        ) = NOT_GIVEN,
         temperature: typing.Optional[float] | NotGiven = NOT_GIVEN,
         tool_choice: (
             typing.Optional[ChatCompletionToolChoiceOptionParam] | NotGiven
@@ -137,11 +116,6 @@ class OpenAIChatCompletionStreamHandler(typing.Generic[TContext]):
         self.__service_tier = service_tier
         self.__stop = stop
         self.__store = store
-        self.__stream_options = (
-            {"include_usage": True}
-            if stream_options is NOT_GIVEN or stream_options is None
-            else stream_options
-        )
         self.__temperature = temperature
         self.__tool_choice = tool_choice
         self.__tools = tools
@@ -169,10 +143,10 @@ class OpenAIChatCompletionStreamHandler(typing.Generic[TContext]):
         required_tool_call = True
 
         while required_tool_call and current_limit <= limit:
-            stream = await self.__openai_client.chat.completions.create(
+            chatcmpl = await self.__openai_client.chat.completions.create(
                 messages=self.__messages_history,
                 model=self.__model,
-                stream=True,
+                stream=False,
                 audio=self.__audio,
                 frequency_penalty=self.__frequency_penalty,
                 function_call=self.__function_call,  # type: ignore
@@ -193,7 +167,6 @@ class OpenAIChatCompletionStreamHandler(typing.Generic[TContext]):
                 service_tier=self.__service_tier,  # type: ignore
                 stop=self.__stop,
                 store=self.__store,
-                stream_options=self.__stream_options,  # type: ignore
                 temperature=self.__temperature,
                 tool_choice=self.__tool_choice,  # type: ignore
                 tools=(
@@ -213,34 +186,9 @@ class OpenAIChatCompletionStreamHandler(typing.Generic[TContext]):
                 extra_body=self.__extra_body,
                 timeout=self.__timeout,
             )
-            stream = typing.cast(
-                AsyncStream[chat_completion_chunk.ChatCompletionChunk], stream
-            )
+            _chatcmpl = typing.cast(chat_completion.ChatCompletion, chatcmpl)
 
-            _chatcmpl = chat_completion.ChatCompletion(
-                id=FAKE_ID,
-                choices=[
-                    chat_completion.Choice(
-                        finish_reason="stop",  # placeholder
-                        index=0,
-                        logprobs=None,  # placeholder
-                        message=ChatCompletionMessage(role="assistant"),
-                    )
-                ],
-                created=0,
-                model=FAKE_MODEL,
-                object="chat.completion",
-                service_tier=None,
-                system_fingerprint=None,
-                usage=None,
-            )
             self.__chatcmpls.append(_chatcmpl)
-
-            # Stream
-            async for chunk in stream:
-                self.__update_chatcmpl_from_chunk(_chatcmpl, chunk)
-
-                await self.on_chatcmpl_chunk(chunk)
 
             await self.on_chatcmpl_done(_chatcmpl)
 
@@ -336,119 +284,8 @@ class OpenAIChatCompletionStreamHandler(typing.Generic[TContext]):
                     or tool_msg
                 )
 
-    async def on_chatcmpl_chunk(
-        self, chatcmpl_chunk: chat_completion_chunk.ChatCompletionChunk
-    ) -> None:
-        pass
-
     async def on_chatcmpl_done(self, chatcmpl: chat_completion.ChatCompletion) -> None:
         pass
-
-    def __update_chatcmpl_from_chunk(
-        self,
-        chatcmpl: chat_completion.ChatCompletion,
-        chatcmpl_chunk: chat_completion_chunk.ChatCompletionChunk,
-    ) -> None:
-        # Update the chatcmpl
-        if chatcmpl.id == FAKE_ID:
-            chatcmpl.id = chatcmpl_chunk.id
-
-        if chatcmpl.created == 0:
-            chatcmpl.created = chatcmpl_chunk.created
-
-        if chatcmpl.model == FAKE_MODEL:
-            chatcmpl.model = chatcmpl_chunk.model
-
-        if chatcmpl.service_tier is None and chatcmpl_chunk.service_tier is not None:
-            chatcmpl.service_tier = chatcmpl_chunk.service_tier
-
-        if (
-            chatcmpl.system_fingerprint is None
-            and chatcmpl_chunk.system_fingerprint is not None
-        ):
-            chatcmpl.system_fingerprint = chatcmpl_chunk.system_fingerprint
-
-        if chatcmpl.usage is None and chatcmpl_chunk.usage is not None:
-            chatcmpl.usage = chatcmpl_chunk.usage
-
-        # Update the choice
-        assert len(chatcmpl.choices) > 0
-        if chatcmpl_chunk.choices is None or len(chatcmpl_chunk.choices) == 0:
-            return
-
-        chatcmpl_choice = chatcmpl.choices[0]
-        chunk_choice = chatcmpl_chunk.choices[0]
-
-        if chunk_choice.finish_reason is not None:
-            chatcmpl_choice.finish_reason = chunk_choice.finish_reason
-
-        if chunk_choice.logprobs is not None:
-            chatcmpl_choice.logprobs = (
-                chat_completion.ChoiceLogprobs.model_validate_json(
-                    chunk_choice.logprobs.model_dump_json()
-                )
-            )
-
-        if chunk_choice.delta.content is not None:  # message delta
-            if chatcmpl_choice.message.content is None:
-                chatcmpl_choice.message.content = ""
-            chatcmpl_choice.message.content += chunk_choice.delta.content
-
-        if delta_audio_data := getattr(chunk_choice.delta, "audio", None):  # audio
-            delta_audio = DeltaAudio.model_validate(delta_audio_data)
-            if chatcmpl_choice.message.audio is None:
-                chatcmpl_choice.message.audio = ChatCompletionAudio(
-                    id=FAKE_ID, data="", expires_at=0, transcript=""
-                )
-            if (
-                delta_audio.id is not None
-                and chatcmpl_choice.message.audio.id == FAKE_ID
-            ):
-                chatcmpl_choice.message.audio.id = delta_audio.id
-            if delta_audio.transcript is not None:
-                chatcmpl_choice.message.audio.transcript += delta_audio.transcript
-            if delta_audio.data is not None:
-                chatcmpl_choice.message.audio.data += delta_audio.data
-            if (
-                delta_audio.expires_at is not None
-                and chatcmpl_choice.message.audio.expires_at == 0
-            ):
-                chatcmpl_choice.message.audio.expires_at = delta_audio.expires_at
-
-        if chunk_choice.delta.tool_calls is not None:
-            chunk_tool_call = chunk_choice.delta.tool_calls[0]
-            if chatcmpl_choice.message.tool_calls is None:
-                chatcmpl_choice.message.tool_calls = []
-            if (chunk_tool_call.index + 1) > len(chatcmpl_choice.message.tool_calls):
-                chatcmpl_choice.message.tool_calls.append(
-                    ChatCompletionMessageToolCall.model_validate(
-                        {
-                            "id": FAKE_ID,
-                            "type": "function",
-                            "function": {"name": "", "arguments": ""},
-                        }
-                    )
-                )
-
-            chatcmpl_choice_message_tool_call = chatcmpl_choice.message.tool_calls[
-                chunk_tool_call.index
-            ]
-            if (
-                chunk_tool_call.id is not None
-                and chatcmpl_choice_message_tool_call.id == FAKE_ID
-            ):
-                chatcmpl_choice_message_tool_call.id = chunk_tool_call.id
-            if chunk_tool_call.function is not None:
-                if chunk_tool_call.function.name is not None:
-                    chatcmpl_choice_message_tool_call.function.name += (
-                        chunk_tool_call.function.name
-                    )
-                if chunk_tool_call.function.arguments is not None:
-                    chatcmpl_choice_message_tool_call.function.arguments += (
-                        chunk_tool_call.function.arguments
-                    )
-
-        return None
 
     def display_messages_history(self) -> None:
         for message in self.__messages_history:

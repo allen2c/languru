@@ -1,14 +1,14 @@
 import base64
 import pathlib
 import typing
-import wave
 
 import agents
 import openai
 import pytest
+from openai.types.chat.chat_completion import ChatCompletion
 
 from languru.examples.tools import GetTimeNow
-from languru.openai_chatcmpl.stream_handler import OpenAIChatCompletionStreamHandler
+from languru.openai_chatcmpl.handler import OpenAIChatCompletionHandler
 from languru.openai_shared.tools import base_model_to_function_tool
 
 MODEL = "gpt-4.1-nano"
@@ -29,6 +29,7 @@ async def test_openai_chatcmpl_stream_handler_simple(
     ]  # type: ignore
 
     messages_history = []
+    final_chatcmpl: ChatCompletion
 
     for user_input in [
         "Hello world",
@@ -38,22 +39,30 @@ async def test_openai_chatcmpl_stream_handler_simple(
     ]:
         messages_history.append({"role": "user", "content": user_input})
 
-        stream_handler = OpenAIChatCompletionStreamHandler(
+        handler = OpenAIChatCompletionHandler(
             openai_async_client,
             messages=messages_history,
             model=MODEL,
             tools=tools,
         )
 
-        await stream_handler.run_until_done()
+        await handler.run_until_done()
 
-        messages_history = stream_handler.get_messages_history()
+        final_chatcmpl = handler.retrieve_last_chatcmpl()
+        assert final_chatcmpl.choices
+        assert final_chatcmpl.choices[0].message.content
 
-        stream_handler.display_messages_history()
+        messages_history = handler.get_messages_history()
+
+        handler.display_messages_history()
+
+    assert "final_chatcmpl" in locals()
+    assert final_chatcmpl.choices[0].message.content is not None
+    assert "hello world" in final_chatcmpl.choices[0].message.content.lower()
 
 
 @pytest.mark.asyncio
-async def test_openai_chatcmpl_stream_handler_audio(
+async def test_openai_chatcmpl_handler_audio(
     openai_async_client: openai.AsyncOpenAI,
 ):
     data_dir = pathlib.Path("data")
@@ -72,11 +81,11 @@ async def test_openai_chatcmpl_stream_handler_audio(
         ) as response:
             await response.stream_to_file(user_audio_filepath)
 
-    stream_handler = OpenAIChatCompletionStreamHandler(
+    handler = OpenAIChatCompletionHandler(
         openai_async_client,
         model="gpt-4o-mini-audio-preview",
         modalities=["text", "audio"],  # want both text & speech out
-        audio={"voice": "alloy", "format": "pcm16"},
+        audio={"voice": "alloy", "format": "wav"},
         messages=[
             {
                 "role": "system",
@@ -97,18 +106,13 @@ async def test_openai_chatcmpl_stream_handler_audio(
                 ],
             },
         ],
-        stream_options={"include_usage": False},
     )
 
-    await stream_handler.run_until_done()
+    await handler.run_until_done()
 
-    chatcmpl = stream_handler.retrieve_last_chatcmpl()
+    chatcmpl = handler.retrieve_last_chatcmpl()
 
     assert chatcmpl.choices[0].message.audio is not None
     audio_b64 = chatcmpl.choices[0].message.audio.data
     audio_bytes = base64.b64decode(audio_b64)
-    with wave.open(str(bot_audio_filepath), "wb") as wf:
-        wf.setnchannels(1)
-        wf.setsampwidth(2)
-        wf.setframerate(24_000)
-        wf.writeframes(audio_bytes)
+    bot_audio_filepath.write_bytes(audio_bytes)
