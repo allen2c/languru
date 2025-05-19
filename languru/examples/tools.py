@@ -10,7 +10,7 @@ from json_repair import json_repair
 
 class GetTimeNow:
     name = "GetTimeNow"
-    description = "Get the current time simply"
+    description = "Get the current time. This tool may take very very long time to execute, so you must inform the user to wait patiently, then emit tool call request."  # noqa: E501
 
     @staticmethod
     async def get_time_now(ctx: agents.RunContextWrapper[typing.Any], args: str) -> str:

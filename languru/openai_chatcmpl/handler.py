@@ -211,17 +211,16 @@ class OpenAIChatCompletionHandler(typing.Generic[TContext]):
                 )
             )
 
-            required_tool_call_finish_reasons = ("tool_calls", "function_call")
-            if _chatcmpl.choices[0].finish_reason in required_tool_call_finish_reasons:
-                required_tool_call = True
-
+            required_tool_call = (
+                _chatcmpl.choices[0].message.tool_calls is not None
+                and len(_chatcmpl.choices[0].message.tool_calls) > 0
+            )
+            logger.debug(f"required_tool_call: {required_tool_call}")
+            if required_tool_call:
                 # Handle tool call
                 for _tool_call in _chatcmpl.choices[0].message.tool_calls or []:
                     tool_call_output = await self.execute_chatcmpl_tool_call(_tool_call)
                     self.__messages_history.append(tool_call_output)
-
-            else:
-                required_tool_call = False
 
         return None
 
