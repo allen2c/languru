@@ -1,3 +1,5 @@
+poetry.lock
+
 # Temporary files
 .DS_Store
 tmp
