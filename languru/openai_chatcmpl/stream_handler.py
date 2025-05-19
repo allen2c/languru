@@ -170,10 +170,6 @@ class OpenAIChatCompletionStreamHandler(typing.Generic[TContext]):
         current_limit = 0
         required_tool_call = True
 
-        from rich import print
-
-        print(sanitize_chatcmpl_messages_input(self.__messages_history))
-
         while required_tool_call and current_limit <= limit:
             stream = await self.__openai_client.chat.completions.create(
                 messages=sanitize_chatcmpl_messages_input(self.__messages_history),
