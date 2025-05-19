@@ -5,6 +5,7 @@ import typing
 import agents
 import openai
 import pytest
+from openai.types.chat.chat_completion_message_param import ChatCompletionMessageParam
 
 from languru.examples.tools import GetTimeNow
 from languru.openai_chatcmpl.stream_handler import OpenAIChatCompletionStreamHandler
@@ -60,7 +61,13 @@ async def test_openai_chatcmpl_stream_handler_audio(
     data_dir.resolve()
     data_dir.mkdir(parents=True, exist_ok=True)
     user_audio_filepath = data_dir.joinpath("user_says.wav")
-    bot_audio_filepath = data_dir.joinpath("bot_says.wav")
+
+    def get_bot_audio_filepath(postfix: str | None = None):
+        return (
+            data_dir.joinpath(f"bot_says_{postfix}.wav")
+            if postfix is not None
+            else data_dir.joinpath("bot_says.wav")
+        )
 
     if user_audio_filepath.is_file() is False:
         async with openai_async_client.audio.speech.with_streaming_response.create(
@@ -72,39 +79,77 @@ async def test_openai_chatcmpl_stream_handler_audio(
         ) as response:
             await response.stream_to_file(user_audio_filepath)
 
+    messages: typing.List[ChatCompletionMessageParam] = [
+        {
+            "role": "system",
+            "content": "You are a concise assistant, speak very very fast (speed x2)",  # noqa: E501
+        },
+        {
+            "role": "user",
+            "content": "Hello world",
+        },
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "input_audio",
+                    "input_audio": {
+                        "data": base64.b64encode(
+                            user_audio_filepath.read_bytes()
+                        ).decode("ascii"),
+                        "format": "wav",
+                    },
+                },
+            ],
+        },
+    ]
+
     stream_handler = OpenAIChatCompletionStreamHandler(
         openai_async_client,
         model="gpt-4o-mini-audio-preview",
         modalities=["text", "audio"],  # want both text & speech out
         audio={"voice": "alloy", "format": "pcm16"},
-        messages=[
-            {
-                "role": "system",
-                "content": "You are a concise assistant, speak very very fast (speed x2)",  # noqa: E501
-            },
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "input_audio",
-                        "input_audio": {
-                            "data": base64.b64encode(
-                                user_audio_filepath.read_bytes()
-                            ).decode("ascii"),
-                            "format": "wav",
-                        },
-                    },
-                ],
-            },
-        ],
+        messages=messages,
         stream_options={"include_usage": False},
     )
 
     await stream_handler.run_until_done()
 
     chatcmpl = stream_handler.retrieve_last_chatcmpl()
+    messages = stream_handler.get_messages_history()
 
     assert chatcmpl.choices[0].message.audio is not None
     audio_b64 = chatcmpl.choices[0].message.audio.data
     audio_bytes = base64.b64decode(audio_b64)
-    save_pcm_as_wav(audio_bytes, bot_audio_filepath)
+    save_pcm_as_wav(audio_bytes, get_bot_audio_filepath("1"))
+
+    # Second message run
+    messages.append(
+        {
+            "role": "user",
+            "content": "Do you know what did I said?",
+        }
+    )
+    stream_handler = OpenAIChatCompletionStreamHandler(
+        openai_async_client,
+        model="gpt-4o-mini-audio-preview",
+        modalities=["text", "audio"],  # want both text & speech out
+        audio={"voice": "alloy", "format": "pcm16"},
+        messages=messages,
+        stream_options={"include_usage": False},
+    )
+
+    await stream_handler.run_until_done()
+
+    chatcmpl = stream_handler.retrieve_last_chatcmpl()
+    assert chatcmpl.choices[0].message.audio is not None
+    assert chatcmpl.choices[0].message.audio.data is not None
+    assert "hello world" in chatcmpl.choices[0].message.audio.transcript.lower()
+
+    messages = stream_handler.get_messages_history()
+    stream_handler.display_messages_history()
+
+    assert chatcmpl.choices[0].message.audio is not None
+    audio_b64 = chatcmpl.choices[0].message.audio.data
+    audio_bytes = base64.b64decode(audio_b64)
+    save_pcm_as_wav(audio_bytes, get_bot_audio_filepath("2"))

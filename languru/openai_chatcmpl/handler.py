@@ -31,6 +31,7 @@ from openai.types.shared.chat_model import ChatModel
 from openai.types.shared.reasoning_effort import ReasoningEffort
 from openai.types.shared_params.metadata import Metadata
 
+from languru.openai_shared.messages import sanitize_chatcmpl_messages_input
 from languru.openai_shared.tools import function_tool_to_chatcmpl_tool_param
 
 logger = logging.getLogger(__name__)
@@ -144,7 +145,7 @@ class OpenAIChatCompletionHandler(typing.Generic[TContext]):
 
         while required_tool_call and current_limit <= limit:
             chatcmpl = await self.__openai_client.chat.completions.create(
-                messages=self.__messages_history,
+                messages=sanitize_chatcmpl_messages_input(self.__messages_history),
                 model=self.__model,
                 stream=False,
                 audio=self.__audio,

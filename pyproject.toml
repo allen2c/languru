@@ -7,7 +7,7 @@ license = "Apache-2.0 license"
 name = "languru"
 readme = "README.md"
 repository = "https://github.com/allen2c/languru"
-version = "0.23.2"
+version = "0.23.3"
 
 [tool.poetry.dependencies]
 anthropic = "<1,>0.27"
