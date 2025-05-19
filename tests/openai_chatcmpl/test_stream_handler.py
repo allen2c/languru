@@ -12,7 +12,7 @@ MODEL = "gpt-4.1-nano"
 
 
 @pytest.mark.asyncio
-async def test_openai_agents_stream_handler_simple(
+async def test_openai_chatcmpl_stream_handler_simple(
     openai_async_client: openai.AsyncOpenAI,
 ):
 
