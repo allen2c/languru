@@ -369,7 +369,7 @@ class OpenAIChatCompletionStreamHandler(typing.Generic[TContext]):
 
         # Update the choice
         assert len(chatcmpl.choices) > 0
-        if len(chatcmpl_chunk.choices) == 0:
+        if chatcmpl_chunk.choices is None or len(chatcmpl_chunk.choices) == 0:
             return
 
         chatcmpl_choice = chatcmpl.choices[0]
