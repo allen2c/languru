@@ -40,6 +40,7 @@ from openai.types.shared.reasoning_effort import ReasoningEffort
 from openai.types.shared_params.metadata import Metadata
 from str_or_none import str_or_none
 
+from languru.openai_shared.messages import sanitize_chatcmpl_messages_input
 from languru.openai_shared.tools import function_tool_to_chatcmpl_tool_param
 
 logger = logging.getLogger(__name__)
@@ -169,9 +170,13 @@ class OpenAIChatCompletionStreamHandler(typing.Generic[TContext]):
         current_limit = 0
         required_tool_call = True
 
+        from rich import print
+
+        print(sanitize_chatcmpl_messages_input(self.__messages_history))
+
         while required_tool_call and current_limit <= limit:
             stream = await self.__openai_client.chat.completions.create(
-                messages=self.__messages_history,
+                messages=sanitize_chatcmpl_messages_input(self.__messages_history),
                 model=self.__model,
                 stream=True,
                 audio=self.__audio,
